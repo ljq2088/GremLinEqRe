@@ -549,7 +549,7 @@ void TeukolskyRadial::compute_amplitudes(Complex nu) {
 // ==========================================================
 // [内部辅助] 基础超几何级数 (仅在 |z| < 1 时有效)
 // ==========================================================
-static std::pair<Complex, Complex> hypergeom_series(Complex a, Complex b, Complex c, Complex z) {
+std::pair<Complex, Complex> TeukolskyRadial::hypergeom_series(Complex a, Complex b, Complex c, Complex z) {
     Complex sum = 1.0;
     Complex term = 1.0;
     Complex deriv = 0.0;
