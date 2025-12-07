@@ -1,0 +1,19 @@
+# 忽略CMake构建目录
+build/
+_build/
+cmake-build-*/
+CMakeFiles/
+
+# 忽略CMake通过FetchContent下载的依赖源
+_deps/
+
+# 忽略编译产物
+*.so
+*.o
+*.pyc
+__pycache__/
+
+# 忽略IDE或编辑器临时文件
+.vscode/
+.idea/
+*.swp
