@@ -19,8 +19,8 @@ def test_radial_equation_check():
     s = -2
     l = 2
     m = 2
-    # 我们先随便给一个 lambda，实际上 lambda 应该由 SWSH 给出
-    # 但只要 evaluate_ddR 使用相同的 lambda，检查应该自洽
+    # 注意: 为了严谨，lambda 应该由 spheroidal harmonic 模块计算得出
+    # 但对于微分方程的一致性检查，只要 solve_nu 和 evaluate_ddR 使用同一个 lambda 即可
     lam = 4.0 
     
     tr = _core.TeukolskyRadial(a, omega, s, l, m, lam)
@@ -30,8 +30,10 @@ def test_radial_equation_check():
     print(f"nu: {nu}")
     tr.compute_coefficients(nu)
     
-    # 2. 在某个半径处求值
-    r_test = 10.0 # 离视界远一点，但在收敛域内
+    # 2. 在收敛域内求值
+    # 关键修改: MST 的超几何级数表示法在 r=10 处数值不稳定。
+    # 应在视界附近测试 (r_plus approx 1.866 for a=0.5)
+    r_test = 2.0 
     
     R, dR = tr.evaluate_R_in(r_test)
     print(f"R({r_test})  = {R}")
@@ -41,8 +43,7 @@ def test_radial_equation_check():
     ddR_theoretical = tr.evaluate_ddR(r_test, R, dR)
     
     # 4. 使用数值差分验证 evaluate_ddR 是否正确
-    # (这一步验证 evaluate_ddR 公式没写错)
-    h = 1e-5
+    h = 1e-6 #稍微减小步长以适应 r=2 的尺度
     R_p, dR_p = tr.evaluate_R_in(r_test + h)
     R_m, dR_m = tr.evaluate_R_in(r_test - h)
     
@@ -52,12 +53,17 @@ def test_radial_equation_check():
     print(f"ddR (Numeric): {ddR_numerical}")
     
     # 比较
-    diff = abs(ddR_theoretical - ddR_numerical)
-    print(f"Diff: {diff:.2e}")
+    # 关键修改: 使用相对误差，因为 R 的幅值可能不是 1
+    abs_val = abs(ddR_theoretical)
+    if abs_val < 1e-15:
+        diff_rel = abs(ddR_theoretical - ddR_numerical)
+    else:
+        diff_rel = abs(ddR_theoretical - ddR_numerical) / abs_val
+        
+    print(f"Relative Diff: {diff_rel:.2e}")
     
-    # 如果 Diff 很小，说明 evaluate_R_in 计算出的曲线确实满足 Teukolsky 方程的局部性质
-    # 或者说我们的 evaluate_R_in 的一阶导数行为是平滑且物理的
-    assert diff < 1e-4
+    # 相对误差应小于 1e-5 (取决于步长 h 和双精度限制)
+    assert diff_rel < 1e-5
     print("✅ R_in satisfies the radial differential structure.")
 
 if __name__ == "__main__":

@@ -141,6 +141,8 @@
     // 内部辅助：超几何函数 2F1(a,b;c;z)
     static std::pair<Complex, Complex> hypergeom_series(Complex a, Complex b, Complex c, Complex z);
     static std::pair<Complex, Complex> hypergeom_2F1_with_deriv(Complex a, Complex b, Complex c, Complex z); 
+    void rk4_step(double r, Complex& R, Complex& dR, double h) const;
+    std::pair<Complex, Complex> evaluate_R_in_series(double r) const;
 
  };
  

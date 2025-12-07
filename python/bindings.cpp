@@ -64,7 +64,8 @@ PYBIND11_MODULE(_core, m) {
         .def("evaluate_R_in", &TeukolskyRadial::evaluate_R_in, 
              "计算 R_in(r) 及其一阶导数，返回 (R, dR)")
         .def("evaluate_ddR", &TeukolskyRadial::evaluate_ddR,
-             "计算 R(r) 的二阶导数 (基于微分方程)");
+             "计算 R(r) 的二阶导数 (基于微分方程)")
+        .def("evaluate_R_up", &TeukolskyRadial::evaluate_R_up);
     py::class_<SWSH>(m, "SWSH")
         .def(py::init<int, int, int, double>(),
                 py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))
