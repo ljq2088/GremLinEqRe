@@ -6,7 +6,7 @@
 
  #ifndef TEUKOLSKY_RADIAL_H
  #define TEUKOLSKY_RADIAL_H
- 
+ #include <map>
  #include <complex>
  #include <vector>
  #include <cmath>
@@ -38,8 +38,31 @@
      * 暴露此接口主要用于调试和验证
      */
     Complex calc_g(Complex nu) const;
+    /**
+     * @brief 计算 MST 级数展开系数 a_n
+     * 对应 GremlinEq 中的 minimal solution 生成逻辑
+     * @param nu 特征值
+     */
+    void compute_coefficients(Complex nu);
+
+    /**
+     * @brief 获取计算好的系数 a_n (用于调试或外部计算)
+     */
+    Complex get_coef(int n) const;
+
+    /**
+     * @brief 计算渐进振幅
+     * 对应 GremlinEq/src/fujtag/fsum.cc 中的 asympt_amps
+     * 计算结果存储在成员变量中
+     */
+    void compute_amplitudes(Complex nu);
+
+    // 获取振幅 (计算通量所需)
+    Complex get_B_inc() const { return m_B_inc; }
+    Complex get_B_trans() const { return m_B_trans; }
+    Complex get_C_trans() const { return m_C_trans; }
     
-     TeukolskyRadial(Real a_spin, Real omega, int s, int l, int m, Real lambda);
+    TeukolskyRadial(Real a_spin, Real omega, int s, int l, int m, Real lambda);
  
      // ==========================================================
      // 基础工具函数
@@ -67,7 +90,25 @@
       */
      Complex continued_fraction(Complex nu, int direction) const;
  
+    /**
+     * @brief 计算径向函数 R_in(r) 及其对 r 的导数
+     * @param r BL 坐标半径
+     * @return pair<R, dR/dr>
+     */
+    std::pair<Complex, Complex> evaluate_R_in(double r);
+
+    /**
+     * @brief 计算径向函数 R_up(r) 及其对 r 的导数
+     * (利用 R_in 和 R_up 的关系或独立级数)
+     */
+    std::pair<Complex, Complex> evaluate_R_up(double r);
     
+    // 获取二阶导数 (利用 Teukolsky 方程 V(r) 反推，不需要数值差分)
+    Complex evaluate_ddR(double r, Complex R, Complex dR) const;
+
+    // ... 在 private 区域 ...
+    // 内部辅助：超几何函数 2F1(a,b;c;z)
+    static Complex hypergeom_2F1(Complex a, Complex b, Complex c, Complex z);
  private:
      Real m_a;
      Real m_omega;
@@ -82,6 +123,20 @@
      Real m_tau;       // (epsilon - m*q) / kappa
      Complex m_epsilon_sq;
      Complex m_tau_sq;
+
+
+    // 使用 map 存储系数 a_n，支持负索引
+    std::map<int, Complex> m_coefficients;
+    // 渐进振幅
+    Complex m_B_inc;   // 入射波振幅 (Infinity -> Horizon)
+    Complex m_B_trans; // 透射波振幅 (Horizon)
+    Complex m_C_trans; // 透射波振幅 (Infinity)
+    
+    // 计算 K_nu 因子 (包含无穷级数求和)
+    Complex k_factor(Complex nu) const;
+    // 计算 A_minus 因子 (用于 C_trans)
+    // 对应 GremlinEq/src/fujtag/fsum.cc 中的 aminus 函数
+    Complex calc_aminus(Complex nu) const;
  };
  
  #endif // TEUKOLSKY_RADIAL_H

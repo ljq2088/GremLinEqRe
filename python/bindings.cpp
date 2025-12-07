@@ -50,10 +50,22 @@ PYBIND11_MODULE(_core, m) {
             
         .def("calc_g", &TeukolskyRadial::calc_g, 
             py::arg("nu"), 
-            "计算超越方程残差 g(nu)");
+            "计算超越方程残差 g(nu)")
+        
+        
+        .def("compute_coefficients", &TeukolskyRadial::compute_coefficients)
+        .def("get_coef", &TeukolskyRadial::get_coef)
+        .def("compute_amplitudes", &TeukolskyRadial::compute_amplitudes)
+        .def_property_readonly("B_inc", &TeukolskyRadial::get_B_inc)
+        .def_property_readonly("B_trans", &TeukolskyRadial::get_B_trans)
+        .def_property_readonly("C_trans", &TeukolskyRadial::get_C_trans);  
+
     py::class_<SWSH>(m, "SWSH")
         .def(py::init<int, int, int, double>(),
                 py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))
-        .def("get_lambda", &SWSH::get_lambda)
-        .def("get_E", &SWSH::get_E);
+        .def_property_readonly("lambda", &SWSH::get_lambda)
+        .def_property_readonly("E", &SWSH::get_E)
+        .def("evaluate_S", &SWSH::evaluate_S)
+        .def("evaluate_L2dag_S", &SWSH::evaluate_L2dag_S)
+        .def("evaluate_L1dag_L2dag_S", &SWSH::evaluate_L1dag_L2dag_S);
 }

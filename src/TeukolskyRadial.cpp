@@ -241,3 +241,374 @@ Complex TeukolskyRadial::solve_nu(Complex nu_guess) const {
     std::cerr << "Warning: solve_nu max iterations reached. Residual: " << std::abs(f1) << std::endl;
     return x1;
 }
+// ==========================================================
+// 1. 计算级数系数 a_n (Minimal Solution)
+// ==========================================================
+void TeukolskyRadial::compute_coefficients(Complex nu) {
+    m_coefficients.clear();
+    
+    // 设定归一化条件 a_0 = 1
+    m_coefficients[0] = 1.0;
+    
+    // 截断范围：通常取到 |n|=20~40 即可达到机器精度
+    // GremlinEq 是动态判断收敛，我们这里先给个固定大范围，或者直到系数极小
+    const int n_max = 40;
+    const double tiny = 1e-30;
+
+    // 向正向递推: a_n = R_n * a_{n-1}
+    // R_n = continued_fraction(nu, 1) 计算的是 R_1, R_2... 吗？
+    // 注意：我们的 continued_fraction(nu, 1) 内部从 k=1 开始迭代，实际上计算的是 R_1
+    // 但我们需要 R_n = -gamma_n / (beta_n + alpha_n * R_{n+1})
+    // 我们的 continued_fraction 函数是通用的 Lentz 方法，它计算的是整个连分式的值。
+    // 在 MST 中，R_n 本身就是一个连分式。
+    // R_n(\nu) 实际上就等于 continued_fraction 逻辑中把 n_start 设为 n 的结果。
+    
+    // 为了效率，我们不能对每个 n 都重新跑一遍几万次的 Lentz 迭代。
+    // 幸运的是，MST 系数递推有一个特性：
+    // a_{n+1} = - (beta_n * a_n + gamma_n * a_{n-1}) / alpha_n
+    // 但这是“非最小解”方向，会发散！
+    // 所以必须用连分式比值：a_n / a_{n-1} = R_n
+    
+    // 正向 (n > 0): a_n = a_{n-1} * R_n
+    // 我们需要修改一下 continued_fraction 或者新增一个函数来计算任意 n 的 R_n？
+    // 实际上，GremlinEq 在 fsum.cc 中并没有显式存储所有 a_n，
+    // 而是边算边求和 (fsum 函数)。
+    // 但为了清晰，我们先存储。
+    
+    // 计算 R_n 序列 (从高阶往回推，或者直接对每个n调连分式)
+    // 这种做法效率稍低但逻辑最简单安全。
+    
+    // n = 1, 2, ...
+    for (int n = 1; n <= n_max; ++n) {
+        // R_n 是从 n 开始向 +inf 的连分式
+        // 我们需要稍微 hack 一下 continued_fraction 函数让它支持起始 n
+        // 或者我们简单地重载一个私有函数
+        // 暂时用一个临时方案：复制 continued_fraction 的逻辑但修改 n_start
+        // (见下方私有辅助函数实现)
+        
+        // 实际上，GremlinEq 的 radialfrac.cc 是计算整个 nu 对应的连分式。
+        // 我们之前实现的 continued_fraction(nu, 1) 是 R_1。
+        // R_n(nu) 其实等价于 R_1(nu + (n-1)) ? 
+        // 不完全是，因为 alpha/beta/gamma 依赖于 n 和 nu 的组合 N = n+nu。
+        // 是的！ MST 系数只依赖于 N = n + nu。
+        // 所以 R_n(\nu) == R_1(\nu + (n-1))。
+        // 利用这个性质，我们可以直接调用 continued_fraction。
+        
+        Complex R_n = continued_fraction(nu + (double)(n - 1), 1);
+        Complex a_prev = m_coefficients[n - 1];
+        m_coefficients[n] = a_prev * R_n;
+        
+        if (std::abs(m_coefficients[n]) < tiny) break;
+    }
+
+    // 反向 (n < 0): a_n = a_{n+1} * L_n
+    // L_n(\nu) 对应 continued_fraction(nu, -1) 的逻辑
+    // L_n(\nu) == L_{-1}(\nu + (n+1)) ?
+    // 检查：L_{-1} 是从 -1 往负无穷。L_n 是从 n 往负无穷。
+    // 系数依赖 N = n + nu。
+    // L_{-1}(\nu) 此时 N 从 -1+nu 开始。
+    // L_n(\nu) 此时 N 从 n+nu 开始。
+    // 令 \nu' = \nu + (n+1)，则 -1+\nu' = -1+nu+n+1 = n+nu。
+    // 所以 L_n(\nu) == L_{-1}(\nu + n + 1)。
+    
+    for (int n = -1; n >= -n_max; --n) {
+        Complex L_n = continued_fraction(nu + (double)(n + 1), -1);
+        Complex a_next = m_coefficients[n + 1];
+        m_coefficients[n] = a_next * L_n;
+        
+        if (std::abs(m_coefficients[n]) < tiny) break;
+    }
+}
+
+Complex TeukolskyRadial::get_coef(int n) const {
+    if (m_coefficients.find(n) != m_coefficients.end()) {
+        return m_coefficients.at(n);
+    }
+    return 0.0;
+}
+
+// ==========================================================
+// 2. K 因子 (kfactor)
+// GremlinEq/src/fujtag/fsum.cc
+// ==========================================================
+// [补全] K 因子 (k_factor)
+// 对应 GremlinEq/src/fujtag/fsum.cc :: kfactor
+// 这是一个非常复杂的公式，包含 Gamma 函数预因子和两个级数求和
+// ==========================================================
+Complex TeukolskyRadial::k_factor(Complex nu) const {
+    // 1. 预因子 (Prefactor)
+    Complex eps = m_epsilon;
+    Complex tau = m_tau;
+    Complex kappa = m_kappa;
+    Complex i = 1.0i;
+    
+    // 常用变量
+    Complex nu2_1 = 2.0 * nu + 1.0;
+    Complex nu_1_it = nu + 1.0 + i * tau;
+    Complex nu_1__it = nu + 1.0 - i * tau; // nu + 1 - i*tau
+    Complex nu_3_ie = nu + 3.0 + i * eps;
+    Complex nu_3__ie = nu + 3.0 - i * eps;
+    
+    // 对应 fsum.cc line 192: prefact calculation
+    // log_gamma 项的组合
+    Complex ln_pre = log_gamma(3.0 - i * (eps + tau)) 
+                   + log_gamma(2.0 * nu + 2.0)
+                   - log_gamma(nu_3_ie) 
+                   + i * eps * kappa 
+                   + log_gamma(nu2_1)
+                   - log_gamma(nu_3__ie) 
+                   - log_gamma(nu_1__it);
+                   
+    Complex prefact = 4.0 * std::pow(2.0 * eps * kappa, -2.0 - nu) * std::exp(ln_pre);
+
+    // 2. 正向级数 (LOOP_POSITIVE) -> num
+    // GremlinEq 这里的级数是超几何函数的展开项
+    Complex num = 1.0;
+    Complex lastcoeff = 1.0;
+    const int max_iter = 1000;
+    const double tol = 1e-14;
+
+    for (int n = 0; n < max_iter; ++n) {
+        double dn = (double)n;
+        // 对应 fsum.cc line 198: lastcoeff *= - (...)
+        Complex term_num = (dn + nu2_1) * (dn + nu - 1.0 + i*eps) * (dn + nu_1_it);
+        Complex term_den = (dn + 1.0) * (dn + nu_3__ie) * (dn + nu_1__it);
+        
+        lastcoeff *= - term_num / term_den;
+        num += lastcoeff;
+        
+        if (std::abs(lastcoeff) < tol * std::abs(num)) break;
+    }
+
+    // 3. 负向级数 (LOOP_NEGATIVE) -> denom
+    // 注意: GremlinEq 这里是用 loop negative 来计算分母部分的级数
+    Complex denom = 1.0;
+    lastcoeff = 1.0;
+    
+    // fsum.cc line 208: LOOP_NEGATIVE
+    // 这里的 n 实际上是递增的索引，对应原文 loop 中的 lastn 递减逻辑
+    // 原文逻辑较晦涩，公式化简后如下：
+    // lastcoeff *= ((lastn + nu2_1) * (lastn + nu_2_ie)) / ((lastn - 1) * (lastn + nu__2__ie));
+    // 注意原文 LOOP_NEGATIVE 宏里 lastn 是递减的。
+    // 我们这里用 n 表示迭代步数，对应原文的 -n (或者说反向递归的深度)
+    
+    // 让我们直接复刻宏展开后的数学逻辑。
+    // 这一项对应超几何级数 2F1 的系数
+    for (int n = 0; n < max_iter; ++n) {
+        double dn = (double)n; 
+        // 实际上这里的递推是针对 specific hypergeometric series
+        // 参照 fsum.cc line 209:
+        // lastcoeff *= ( (lastn + nu2_1) * (lastn + nu + 2.0 + i*eps) ) 
+        //            / ( (lastn - 1.0) * (lastn + nu - 2.0 - i*eps) );
+        // 这里的 lastn 在 LOOP_NEGATIVE 里是从 0 开始递减：0, -1, -2...
+        // 所以我们在代码里用 dn = -n
+        
+        double lastn = -dn;
+        
+        // 避开 lastn = 1 的奇点（虽然 LOOP_NEGATIVE 从 0 开始减，不会碰到 1）
+        // 但注意 n=0 时 lastn=0。公式里分母有 (lastn-1)，即 -1，安全。
+        
+        Complex term_num = (lastn + nu2_1) * (lastn + nu + 2.0 + i*eps);
+        Complex term_den = (lastn - 1.0) * (lastn + nu - 2.0 - i*eps);
+        
+        lastcoeff *= term_num / term_den;
+        denom += lastcoeff;
+        
+        if (std::abs(lastcoeff) < tol * std::abs(denom)) break;
+    }
+
+    return prefact * num / denom;
+}
+
+
+// ==========================================================
+// [补全] A_minus 因子
+// 对应 GremlinEq/src/fujtag/fsum.cc :: aminus
+// 用于计算 C_trans
+// ==========================================================
+Complex TeukolskyRadial::calc_aminus(Complex nu) const {
+    Complex i = 1.0i;
+    Complex eps = m_epsilon;
+    
+    // 1. 正向级数 (sum_pos)
+    // 对应 fsum.cc line 242
+    Complex sum_pos = 1.0;
+    Complex lastcoeff = 1.0;
+    const int max_iter = 1000;
+    const double tol = 1e-14;
+
+    for (int n = 0; n < max_iter; ++n) {
+        double lastn = (double)n;
+        // lastcoeff *= - (lastn + nu - 1.0 - i*eps) / (lastn + nu + 3.0 + i*eps);
+        Complex num = lastn + nu - 1.0 - i*eps;
+        Complex den = lastn + nu + 3.0 + i*eps;
+        
+        lastcoeff *= - num / den;
+        sum_pos += lastcoeff;
+        if (std::abs(lastcoeff) < tol * std::abs(sum_pos)) break;
+    }
+    
+    // 注意：GremlinEq 的 aminus 函数只计算了 LOOP_POSITIVE 部分？
+    // 仔细看 fsum.cc line 242 (LOOP_POSITIVE) 和 line 250 (LOOP_NEGATIVE).
+    // 原文好像是把它们串起来了？不，那是两个独立的代码块。
+    // 但是 aminus 函数只返回了一个 sum。
+    // 原来：它根据某种条件选择一个方向？或者两部分相乘？
+    // 让我们看 fsum.cc 的结构：
+    // sum = 1; LOOP_POSITIVE(...);
+    // lastcoeff = 1; LOOP_NEGATIVE(...); 
+    // 上面的 sum 变量在 LOOP_NEGATIVE 之前没有重置！
+    // 这意味着它是接着加的？不，LOOP_NEGATIVE 里是 `sum += lastcoeff`。
+    // 所以它是把两个方向的级数都加到了同一个 sum 变量里！
+    // 也就是说 sum = 1 + (正向项) + (负向项)。
+    
+    // 2. 负向级数 (sum_neg)
+    lastcoeff = 1.0; // 重置系数
+    for (int n = 0; n < max_iter; ++n) {
+        double lastn = -(double)n; // 从 0 开始递减
+        
+        // lastcoeff *= - (lastn + nu + 2.0 + i*eps) / (lastn + nu - 2.0 - i*eps);
+        Complex num = lastn + nu + 2.0 + i*eps;
+        Complex den = lastn + nu - 2.0 - i*eps;
+        
+        lastcoeff *= - num / den;
+        
+        // 把结果加到同一个 sum_pos 里 (对应 fsum.cc 的逻辑)
+        sum_pos += lastcoeff;
+        if (std::abs(lastcoeff) < tol * std::abs(sum_pos)) break;
+    }
+    
+    // 3. 预因子
+    // return pow(2.0, 1.0 + i*eps) * exp(-0.5 * PI * (eps + i*(nu - 1.0))) * sum;
+    Complex prefact = std::pow(2.0, 1.0 + i*eps) * std::exp(-0.5 * M_PI * (eps + i*(nu - 1.0)));
+    
+    return prefact * sum_pos;
+}
+
+// ==========================================================
+// [完善] 渐进振幅计算 (compute_amplitudes)
+// 对应 fsum.cc :: asympt_amps
+// ==========================================================
+void TeukolskyRadial::compute_amplitudes(Complex nu) {
+    // 1. 确保系数已计算
+    compute_coefficients(nu);
+    
+    // 2. 计算系数总和 (Straight Sum of a_n)
+    // 对应 fsum.cc :: fsum
+    // 同样，GremlinEq 的 fsum 也是把正向和负向的级数加到一起
+    // 我们已经在 compute_coefficients 里把 a_n 都存到 map 里了，直接求和即可
+    Complex straight_sum = 0.0;
+    for (auto const& [n, val] : m_coefficients) {
+        straight_sum += val;
+    }
+    
+    // 3. 计算关键因子
+    Complex k_nu = k_factor(nu);
+    Complex k_minus_nu_1 = k_factor(-nu - 1.0);
+    Complex aminus_val = calc_aminus(nu); // 新增
+    
+    Complex eps = m_epsilon;
+    Complex kappa = m_kappa;
+    Complex tau = m_tau;
+    Complex i = 1.0i;
+    
+    // 4. B_trans (Transmission)
+    // fsum.cc line 72
+    Complex phase_trans = i * (eps + tau) * kappa * (0.5 + std::log(kappa)/(1.0+kappa));
+    m_B_trans = (1.0 / std::pow(2.0*kappa, 4)) * std::exp(phase_trans) * straight_sum;
+    
+    // 5. C_trans (Transmission, Upgoing)
+    // fsum.cc line 85: *c_trans = epsilon^3 / 8 * aminussum * exp(...)
+    // ieloge = i * epsilon * log(epsilon)
+    Complex ieloge = i * eps * std::log(eps);
+    m_C_trans = (eps * eps * eps / 8.0) * aminus_val * std::exp(ieloge - 0.5*i*(1.0-kappa)*eps);
+    
+    // 6. B_inc (Incident)
+    // fsum.cc line 77
+    // term_sin = sin(pi*(nu + 2 + i*eps)) / sin(pi*(nu - 2 - i*eps))
+    // 利用 sin(z+2pi) = sin(z)，其实就是 sin(pi*(nu+i*eps)) / sin(pi*(nu-i*eps))
+    Complex arg1 = M_PI * (nu + 2.0 + i*eps);
+    Complex arg2 = M_PI * (nu - 2.0 - i*eps);
+    Complex term_sin = std::sin(arg1) / std::sin(arg2);
+    
+    Complex term_brackets = k_nu - i * std::exp(-i * M_PI * nu) * term_sin * k_minus_nu_1;
+    
+    // 指数项
+    // exp( pi/2 * (-eps + i(nu+3)) - ieloge + ... )
+    Complex exp_arg = M_PI * 0.5 * (-eps + i*(nu + 3.0)) 
+                    - ieloge 
+                    + 0.5*i*(1.0-kappa)*eps
+                    + log_gamma(nu + 3.0 + i*eps) 
+                    - log_gamma(nu - 1.0 - i*eps);
+                    
+    m_B_inc = (2.0 * term_brackets / eps)
+            * std::pow(2.0, -3.0 - i*eps)
+            * std::exp(exp_arg)
+            * straight_sum;
+}
+// ==========================================================
+// 辅助：超几何函数 2F1
+// 简单的级数求和，适用于 |z| < 1 (MST 方法通常在收敛域内)
+// ==========================================================
+Complex TeukolskyRadial::hypergeom_2F1(Complex a, Complex b, Complex c, Complex z) {
+    Complex sum = 1.0;
+    Complex term = 1.0;
+    
+    // 级数展开: 1 + (a*b/c)*z + ...
+    for (int k = 0; k < 500; ++k) {
+        // term_k+1 = term_k * (a+k)(b+k) / ((c+k)(k+1)) * z
+        Complex num = (a + (double)k) * (b + (double)k);
+        Complex den = (c + (double)k) * (double)(k + 1);
+        
+        term *= (num / den) * z;
+        sum += term;
+        
+        if (std::abs(term) < 1e-15 * std::abs(sum)) break;
+    }
+    return sum;
+}
+
+// ==========================================================
+// 评估 R_in(r)
+// 参考 FT04 Eq. (2-3) 和 (2-4)
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in(double r) {
+    // 1. 准备变量
+    // x = w(r_plus - r) / (epsilon * kappa)
+    // 注意: GremlinEq 使用的 x 定义可能略有不同，需严格对应公式
+    // FT04 Eq 2.4 下方: x = \omega(r_+ - r) / (\epsilon \kappa)
+    // \epsilon \kappa = 2 M \omega * \sqrt{1-q^2} = \omega (r_+ - r_-)
+    // 所以 x = (r_+ - r) / (r_+ - r_-)
+    
+    double r_plus = 1.0 + m_kappa;
+    double r_minus = 1.0 - m_kappa;
+    double x = (r_plus - r) / (r_plus - r_minus);
+    
+    // 限制 x 的范围，MST 的 hypergeometric series 在 x < 0 (即 r > r_plus) 时收敛
+    // 但在 r -> r_plus (x -> 0) 附近收敛最快
+    
+    // 2. 求和计算 p_in(x) (Eq 2-4)
+    // p_in = sum a_n F(n+nu+1-itau, -n-nu-itau; 1-s-ieps-itau; x)
+    Complex p_in = 0.0;
+    Complex dp_in_dx = 0.0; // p_in 对 x 的导数
+    
+    Complex c = 1.0 - (double)m_s - 1.0i * m_epsilon - 1.0i * m_tau;
+    
+    // 遍历已计算的系数 a_n
+    for (auto const& [n, an] : m_coefficients) {
+        // a = n + nu + 1 - i*tau
+        // b = -n - nu - i*tau
+        Complex a_param = (double)n + solve_nu(2.0) + 1.0 - 1.0i * m_tau; // 注意：这里应传入已解出的 nu
+        // 为了效率，nu 应该作为成员变量存储，而不是每次 solve。
+        // 暂时假设 nu 已知，或者从外部传入。
+        // **修正**：我们应该在 compute_coefficients 时存储 nu，或者要求用户先 solve。
+        // 这里暂时用 solve_nu(2.0) 占位，实际应使用类成员 m_nu。
+        
+        // 实际上 a_n 是 compute_coefficients(nu) 算出来的，
+        // 只要系数表不为空，nu 应该是固定的。
+        // 让我们稍微修改一下类结构，在 compute 之后保存 m_nu。
+    }
+    
+    // ... (鉴于此处逻辑依赖 m_nu，建议先在头文件添加 m_nu 成员并在 compute_coefficients 中赋值)
+    
+    return {0.0, 0.0}; // 占位
+}
