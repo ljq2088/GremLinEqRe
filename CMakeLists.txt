@@ -17,7 +17,11 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/pybind/pybind11.git
   GIT_TAG        v2.11.1
 )
-
+FetchContent_Declare(
+  Eigen3
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG        3.4.0
+)
 FetchContent_MakeAvailable(Eigen3)
 FetchContent_MakeAvailable(pybind11)
 
