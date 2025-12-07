@@ -245,6 +245,7 @@ Complex TeukolskyRadial::solve_nu(Complex nu_guess) const {
 // 1. 计算级数系数 a_n (Minimal Solution)
 // ==========================================================
 void TeukolskyRadial::compute_coefficients(Complex nu) {
+    m_nu = nu; // <--- 关键：保存 nu 供后续 evaluate_R_in 使用
     m_coefficients.clear();
     
     // 设定归一化条件 a_0 = 1
@@ -546,69 +547,235 @@ void TeukolskyRadial::compute_amplitudes(Complex nu) {
             * straight_sum;
 }
 // ==========================================================
-// 辅助：超几何函数 2F1
-// 简单的级数求和，适用于 |z| < 1 (MST 方法通常在收敛域内)
+// [内部辅助] 基础超几何级数 (仅在 |z| < 1 时有效)
 // ==========================================================
-Complex TeukolskyRadial::hypergeom_2F1(Complex a, Complex b, Complex c, Complex z) {
+static std::pair<Complex, Complex> hypergeom_series(Complex a, Complex b, Complex c, Complex z) {
     Complex sum = 1.0;
     Complex term = 1.0;
+    Complex deriv = 0.0;
     
-    // 级数展开: 1 + (a*b/c)*z + ...
-    for (int k = 0; k < 500; ++k) {
-        // term_k+1 = term_k * (a+k)(b+k) / ((c+k)(k+1)) * z
-        Complex num = (a + (double)k) * (b + (double)k);
-        Complex den = (c + (double)k) * (double)(k + 1);
+    // k=0 term: 1
+    // derivative of 1 is 0
+    
+    for (int k = 0; k < 2000; ++k) { // 增加迭代上限以防万一
+        double dk = (double)k;
+        
+        // term_{k+1}
+        Complex num = (a + dk) * (b + dk);
+        Complex den = (c + dk) * (dk + 1.0);
         
         term *= (num / den) * z;
         sum += term;
         
+        // d/dz (z^{k+1}) = (k+1) z^k
+        // term has z^{k+1}, so deriv_term = term * (k+1) / z
+        if (std::abs(z) > 1e-15) {
+            deriv += term * (dk + 1.0) / z;
+        } else {
+            // z->0 limit, derivative is coefficient of linear term (k=0)
+            if (k == 0) deriv += a * b / c;
+        }
+        
         if (std::abs(term) < 1e-15 * std::abs(sum)) break;
     }
-    return sum;
+    return {sum, deriv};
 }
 
 // ==========================================================
-// 评估 R_in(r)
+// 超几何函数求解器
+// 自动选择直接求和或线性变换 (FT04 Eq 3-8)
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::hypergeom_2F1_with_deriv(Complex a, Complex b, Complex c, Complex z) {
+    // 策略：如果 |z| <= 0.5，直接求和。
+    // 如果 |z| > 0.5，使用 z -> w = 1/(1-z) 变换。
+    // 注意：MST 的 x 在物理区域 r > r+ 总是负的，所以 1/(1-z) 总是落在 (0, 1) 内。
+    
+    if (std::abs(z) <= 0.6) {
+        return hypergeom_series(a, b, c, z);
+    } else {
+        // 使用变换公式 FT04 Eq (3-8)
+        // F(a,b;c;z) = (1-z)^-a * G1 * F(a, c-b; a-b+1; w) 
+        //            + (1-z)^-b * G2 * F(b, c-a; b-a+1; w)
+        // 其中 w = 1/(1-z)
+        
+        Complex w = 1.0 / (1.0 - z);
+        Complex one_minus_z = 1.0 - z;
+        
+        // 检查奇点: a-b 必须不是整数
+        // 在 MST 中，a-b = 2n + 2nu + 1。只要 nu 不是半整数，这就没问题。
+        // 我们假设 solve_nu 返回的 nu 是复数，满足条件。
+        
+        // 系数 G1, G2 (利用 log_gamma 计算以防溢出)
+        // G1 = Gamma(c)Gamma(b-a) / (Gamma(b)Gamma(c-a))
+        // G2 = Gamma(c)Gamma(a-b) / (Gamma(a)Gamma(c-b))
+        
+        Complex ln_Gc = log_gamma(c);
+        Complex ln_Ga = log_gamma(a);
+        Complex ln_Gb = log_gamma(b);
+        Complex ln_G_ba = log_gamma(b - a);
+        Complex ln_G_ab = log_gamma(a - b);
+        Complex ln_G_ca = log_gamma(c - a);
+        Complex ln_G_cb = log_gamma(c - b);
+        
+        Complex G1 = std::exp(ln_Gc + ln_G_ba - ln_Gb - ln_G_ca);
+        Complex G2 = std::exp(ln_Gc + ln_G_ab - ln_Ga - ln_G_cb);
+        
+        // 计算两个新的超几何级数
+        // F1: F(a, c-b; a-b+1; w)
+        auto [F1, dF1_dw] = hypergeom_series(a, c - b, a - b + 1.0, w);
+        
+        // F2: F(b, c-a; b-a+1; w)
+        auto [F2, dF2_dw] = hypergeom_series(b, c - a, b - a + 1.0, w);
+        
+        // 组合项 T1 = (1-z)^-a * G1 * F1
+        // (1-z)^-a = w^a
+        Complex wa = std::pow(w, a);
+        Complex wb = std::pow(w, b);
+        
+        Complex T1 = wa * G1 * F1;
+        Complex T2 = wb * G2 * F2;
+        
+        Complex F_val = T1 + T2;
+        
+        // 计算导数 dF/dz
+        // 链式法则: d/dz = (dw/dz) * d/dw = w^2 * d/dw
+        // d(w^a F1)/dw = a w^{a-1} F1 + w^a F1' = w^a (a/w F1 + F1')
+        // 所以 dT1/dz = w^2 * G1 * w^a * (a/w F1 + dF1_dw)
+        //             = G1 * w^{a+1} * (a F1 + w dF1_dw)
+        
+        // 注意：这里 w*dF1_dw 可以直接用级数导数计算结果
+        Complex dT1_dz = G1 * std::pow(w, a + 1.0) * (a * F1 + w * dF1_dw);
+        Complex dT2_dz = G2 * std::pow(w, b + 1.0) * (b * F2 + w * dF2_dw);
+        
+        return {F_val, dT1_dz + dT2_dz};
+    }
+}
+// ==========================================================
+// [修复] 评估 R_in(r)
 // 参考 FT04 Eq. (2-3) 和 (2-4)
 // ==========================================================
 std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in(double r) {
-    // 1. 准备变量
-    // x = w(r_plus - r) / (epsilon * kappa)
-    // 注意: GremlinEq 使用的 x 定义可能略有不同，需严格对应公式
-    // FT04 Eq 2.4 下方: x = \omega(r_+ - r) / (\epsilon \kappa)
-    // \epsilon \kappa = 2 M \omega * \sqrt{1-q^2} = \omega (r_+ - r_-)
-    // 所以 x = (r_+ - r) / (r_+ - r_-)
-    
+    // 1. 几何变量定义 (FT04 Eq 2.4 下方)
+    // x = omega * (r_plus - r) / (epsilon * kappa)
+    // 简化后: x = (r_plus - r) / (r_plus - r_minus)
+    // r_plus = 1 + kappa, r_minus = 1 - kappa (M=1)
+     
     double r_plus = 1.0 + m_kappa;
     double r_minus = 1.0 - m_kappa;
-    double x = (r_plus - r) / (r_plus - r_minus);
+    double r_diff = r_plus - r_minus; // 2 * kappa
     
-    // 限制 x 的范围，MST 的 hypergeometric series 在 x < 0 (即 r > r_plus) 时收敛
-    // 但在 r -> r_plus (x -> 0) 附近收敛最快
+    // 自变量 x
+    // 注意：当 r > r_plus 时，x < 0。超几何级数在 x <= 0 时收敛良好。
+    double x = (r_plus - r) / r_diff;
     
-    // 2. 求和计算 p_in(x) (Eq 2-4)
-    // p_in = sum a_n F(n+nu+1-itau, -n-nu-itau; 1-s-ieps-itau; x)
-    Complex p_in = 0.0;
-    Complex dp_in_dx = 0.0; // p_in 对 x 的导数
+    // dx/dr = -1 / (r_plus - r_minus) = -1 / (2*kappa)
+    double dx_dr = -1.0 / r_diff;
+
+    // 2. 预因子 (Prefactors)
+    // FT04 Eq (2-3): R_in = e^{i eps kappa x} * (-x)^{-s - i(eps+tau)/2} * (1-x)^{i(eps-tau)/2} * p_in(x)
     
-    Complex c = 1.0 - (double)m_s - 1.0i * m_epsilon - 1.0i * m_tau;
+    Complex i = 1.0i;
     
-    // 遍历已计算的系数 a_n
+    // Term 1: Exponential
+    Complex term_exp = std::exp(i * m_epsilon * m_kappa * x);
+    Complex d_term_exp = term_exp * (i * m_epsilon * m_kappa); // d/dx
+    
+    // Term 2: (-x)^Power1
+    // Power1 = -s - i(eps+tau)/2
+    Complex p1 = -(double)m_s - 0.5i * (m_epsilon + m_tau);
+    // 注意: r > r_plus => x < 0 => -x > 0. 这是一个正实数，不会有多值问题。
+    Complex term_x = std::pow(Complex(-x), p1);
+    Complex d_term_x = (x != 0.0) ? (p1 * term_x / x) : 0.0; // d/dx (x^p) = p x^{p-1}
+    // 修正导数符号: d/dx [(-x)^p] = p(-x)^{p-1} * (-1) = -p (-x)^p / (-x) = p (-x)^p / x ?
+    // 链式法则: u = -x, du/dx = -1. d/du (u^p) = p u^{p-1}. 
+    // d/dx = p (-x)^{p-1} * (-1). 
+    // term_x / x = (-x)^p / x = - (-x)^{p-1}. 
+    // 所以 d_term_x = p * (-1) * (-x)^{p-1} = p * (term_x / x) * (-1) * (-1)? 
+    // 简单推导: d/dx (-x)^p = - p (-x)^{p-1}. 
+    // 代码中 term_x / (-x) = (-x)^{p-1}.
+    // 所以 d/dx = - p * (term_x / -x) = p * term_x / x. 正确。
+
+    // Term 3: (1-x)^Power2
+    // Power2 = i(eps-tau)/2
+    Complex p2 = 0.5i * (m_epsilon - m_tau);
+    Complex term_1x = std::pow(Complex(1.0 - x), p2);
+    // d/dx (1-x)^p = p (1-x)^{p-1} * (-1) = -p * term_1x / (1-x)
+    Complex d_term_1x = -p2 * term_1x / (1.0 - x);
+
+    // 3. 级数求和 p_in(x) (FT04 Eq 2-4)
+    Complex P = 0.0;
+    Complex dP_dx = 0.0;
+    
+    // 超几何参数 gamma = 1 - s - i(eps + tau)
+    Complex param_c = 1.0 - (double)m_s - i * (m_epsilon + m_tau);
+
     for (auto const& [n, an] : m_coefficients) {
-        // a = n + nu + 1 - i*tau
-        // b = -n - nu - i*tau
-        Complex a_param = (double)n + solve_nu(2.0) + 1.0 - 1.0i * m_tau; // 注意：这里应传入已解出的 nu
-        // 为了效率，nu 应该作为成员变量存储，而不是每次 solve。
-        // 暂时假设 nu 已知，或者从外部传入。
-        // **修正**：我们应该在 compute_coefficients 时存储 nu，或者要求用户先 solve。
-        // 这里暂时用 solve_nu(2.0) 占位，实际应使用类成员 m_nu。
+        // alpha = n + nu + 1 - i*tau
+        // beta  = -n - nu - i*tau
+        Complex param_a = (double)n + m_nu + 1.0 - i * m_tau;
+        Complex param_b = -(double)n - m_nu - i * m_tau;
         
-        // 实际上 a_n 是 compute_coefficients(nu) 算出来的，
-        // 只要系数表不为空，nu 应该是固定的。
-        // 让我们稍微修改一下类结构，在 compute 之后保存 m_nu。
+        auto [F, dF_dx] = hypergeom_2F1_with_deriv(param_a, param_b, param_c, Complex(x));
+        
+        P += an * F;
+        dP_dx += an * dF_dx;
     }
     
-    // ... (鉴于此处逻辑依赖 m_nu，建议先在头文件添加 m_nu 成员并在 compute_coefficients 中赋值)
+    // 4. 组合 R = T1 * T2 * T3 * P
+    Complex R = term_exp * term_x * term_1x * P;
     
-    return {0.0, 0.0}; // 占位
+    // 5. 组合导数 dR/dx
+    // dR/dx = R * (d_T1/T1 + d_T2/T2 + d_T3/T3 + dP/P)
+    // 这种对数微分法数值上更稳
+    
+    Complex dR_dx = d_term_exp * term_x * term_1x * P
+                  + term_exp * d_term_x * term_1x * P
+                  + term_exp * term_x * d_term_1x * P
+                  + term_exp * term_x * term_1x * dP_dx;
+                  
+    // 转换为对 r 的导数
+    return {R, dR_dx * dx_dr};
+}
+// ==========================================================
+// 评估 d^2R/dr^2 (利用 Teukolsky 方程)
+// ==========================================================
+Complex TeukolskyRadial::evaluate_ddR(double r, Complex R, Complex dR) const {
+    // Teukolsky Radial Equation (Sasaki-Tagoshi 2003 Eq. 2.2 or similar)
+    // Delta^{-s} d/dr (Delta^{s+1} dR/dr) + ( ... ) R = 0
+    // 展开:
+    // Delta d2R + (s+1)(dDelta/dr) dR + Delta^{-s} (...) R = 0 ?
+    // 让我们用最标准的展开形式 (Teukolsky 1973 Eq 2.2):
+    // Delta d^2R/dr^2 + 2(s+1)(r-M) dR/dr + V(r) R = 0
+    
+    // 势函数 V(r) (注意：不同文献 V 定义不同，要小心符号)
+    // 标准 Teukolsky Eq:
+    // V = [ ( (r^2+a^2)omega - m a )^2 - 2is(r-M)( (r^2+a^2)omega - ma ) ] / Delta
+    //     + 4is omega r - lambda
+    // (注意 lambda 定义差异)
+    
+    double M = 1.0; // Geometric units
+    double a = m_a;
+    double delta = r*r - 2.0*r + a*a;
+    double d_delta = 2.0*r - 2.0; // 2(r-M)
+    
+    double omega = m_omega;
+    Complex i = 1.0i;
+    
+    // K = (r^2+a^2)w - am
+    double K = (r*r + a*a) * omega - a * (double)m_m;
+    
+    // Term 1: 2(s+1)(r-M) dR
+    Complex term1 = (double)(2 * (m_s + 1)) * (r - M) * dR;
+    
+    // Term 2: Potential * R
+    // V_teuk = (K^2 - 2is(r-M)K)/Delta + 4iswr - lambda
+    Complex term_K = K*K - 2.0*i*(double)m_s*(r-M)*K;
+    Complex V = term_K / delta + 4.0*i*(double)m_s*omega*r - m_lambda;
+    
+    Complex term2 = V * R;
+    
+    // Delta * d2R + term1 + term2 = 0
+    // => d2R = - (term1 + term2) / Delta
+    
+    return - (term1 + term2) / delta;
 }

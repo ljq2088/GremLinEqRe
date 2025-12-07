@@ -58,8 +58,13 @@ PYBIND11_MODULE(_core, m) {
         .def("compute_amplitudes", &TeukolskyRadial::compute_amplitudes)
         .def_property_readonly("B_inc", &TeukolskyRadial::get_B_inc)
         .def_property_readonly("B_trans", &TeukolskyRadial::get_B_trans)
-        .def_property_readonly("C_trans", &TeukolskyRadial::get_C_trans);  
-
+        .def_property_readonly("C_trans", &TeukolskyRadial::get_C_trans)
+        .def("get_omega", &TeukolskyRadial::get_omega) 
+        .def("get_m", &TeukolskyRadial::get_m)
+        .def("evaluate_R_in", &TeukolskyRadial::evaluate_R_in, 
+             "计算 R_in(r) 及其一阶导数，返回 (R, dR)")
+        .def("evaluate_ddR", &TeukolskyRadial::evaluate_ddR,
+             "计算 R(r) 的二阶导数 (基于微分方程)");
     py::class_<SWSH>(m, "SWSH")
         .def(py::init<int, int, int, double>(),
                 py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))

@@ -106,9 +106,10 @@
     // 获取二阶导数 (利用 Teukolsky 方程 V(r) 反推，不需要数值差分)
     Complex evaluate_ddR(double r, Complex R, Complex dR) const;
 
-    // ... 在 private 区域 ...
-    // 内部辅助：超几何函数 2F1(a,b;c;z)
-    static Complex hypergeom_2F1(Complex a, Complex b, Complex c, Complex z);
+    
+    // Getters for parameters (needed by Source)
+    Real get_omega() const { return m_omega; }
+    int get_m() const { return m_m; }
  private:
      Real m_a;
      Real m_omega;
@@ -123,8 +124,8 @@
      Real m_tau;       // (epsilon - m*q) / kappa
      Complex m_epsilon_sq;
      Complex m_tau_sq;
-
-
+    // ===存储特征值 nu ===
+    Complex m_nu;
     // 使用 map 存储系数 a_n，支持负索引
     std::map<int, Complex> m_coefficients;
     // 渐进振幅
@@ -137,6 +138,10 @@
     // 计算 A_minus 因子 (用于 C_trans)
     // 对应 GremlinEq/src/fujtag/fsum.cc 中的 aminus 函数
     Complex calc_aminus(Complex nu) const;
+    // 内部辅助：超几何函数 2F1(a,b;c;z)
+    static std::pair<Complex, Complex> hypergeom_series(Complex a, Complex b, Complex c, Complex z);
+    static std::pair<Complex, Complex> hypergeom_2F1_with_deriv(Complex a, Complex b, Complex c, Complex z); 
+
  };
  
  #endif // TEUKOLSKY_RADIAL_H
