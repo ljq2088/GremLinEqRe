@@ -33,7 +33,7 @@ def test_radial_equation_check():
     # 2. 在收敛域内求值
     # 关键修改: MST 的超几何级数表示法在 r=10 处数值不稳定。
     # 应在视界附近测试 (r_plus approx 1.866 for a=0.5)
-    r_test = 2.0 
+    r_test = 100.0
     
     R, dR = tr.evaluate_R_in(r_test)
     print(f"R({r_test})  = {R}")

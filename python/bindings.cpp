@@ -65,7 +65,9 @@ PYBIND11_MODULE(_core, m) {
              "计算 R_in(r) 及其一阶导数，返回 (R, dR)")
         .def("evaluate_ddR", &TeukolskyRadial::evaluate_ddR,
              "计算 R(r) 的二阶导数 (基于微分方程)")
-        .def("evaluate_R_up", &TeukolskyRadial::evaluate_R_up);
+        .def("evaluate_R_up", &TeukolskyRadial::evaluate_R_up)
+        .def("evaluate_R_in_Hypergeom", &TeukolskyRadial::evaluate_R_in_Hypergeom, "强制使用超几何级数 (Near Horizon)")
+        .def("evaluate_R_in_Coulomb", &TeukolskyRadial::evaluate_R_in_Coulomb, "强制使用库伦波级数 (Far Field)");
     py::class_<SWSH>(m, "SWSH")
         .def(py::init<int, int, int, double>(),
                 py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))

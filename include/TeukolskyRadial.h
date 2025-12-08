@@ -97,6 +97,12 @@
      */
     std::pair<Complex, Complex> evaluate_R_in(double r);
 
+    // [新增] 强制使用库伦波级数求值 (用于远场)
+    std::pair<Complex, Complex> evaluate_R_in_Coulomb(double r);
+
+    // [新增] 强制使用超几何级数求值 (用于近场，即原来的 evaluate_R_in)
+    std::pair<Complex, Complex> evaluate_R_in_Hypergeom(double r);
+
     /**
      * @brief 计算径向函数 R_up(r) 及其对 r 的导数
      * (利用 R_in 和 R_up 的关系或独立级数)
@@ -143,6 +149,9 @@
     static std::pair<Complex, Complex> hypergeom_2F1_with_deriv(Complex a, Complex b, Complex c, Complex z); 
     void rk4_step(double r, Complex& R, Complex& dR, double h) const;
     std::pair<Complex, Complex> evaluate_R_in_series(double r) const;
+    static std::pair<Complex, Complex> hypergeom_1F1_with_deriv(Complex a, Complex b, Complex z);
+    // L = nu + n (复数), rho = omega * r
+    static std::pair<Complex, Complex> coulomb_F_with_deriv(Complex L, Complex eta, Complex rho);
 
  };
  

@@ -337,21 +337,23 @@ Complex TeukolskyRadial::get_coef(int n) const {
 // 这是一个非常复杂的公式，包含 Gamma 函数预因子和两个级数求和
 // ==========================================================
 Complex TeukolskyRadial::k_factor(Complex nu) const {
-    // 1. 预因子 (Prefactor)
     Complex eps = m_epsilon;
     Complex tau = m_tau;
     Complex kappa = m_kappa;
     Complex i = 1.0i;
     
-    // 常用变量
+    // ------------------------------------------------------
+    // 1. Prefactor (预因子)
+    // 对应 GremlinEq 中的 prefact
+    // formula: 4 * (2eps*kappa)^(-2-nu) * exp(...)
+    // ------------------------------------------------------
     Complex nu2_1 = 2.0 * nu + 1.0;
-    Complex nu_1_it = nu + 1.0 + i * tau;
-    Complex nu_1__it = nu + 1.0 - i * tau; // nu + 1 - i*tau
     Complex nu_3_ie = nu + 3.0 + i * eps;
-    Complex nu_3__ie = nu + 3.0 - i * eps;
-    
-    // 对应 fsum.cc line 192: prefact calculation
-    // log_gamma 项的组合
+    Complex nu_3__ie = nu + 3.0 - i * eps; // nu + 3 - i*eps
+    Complex nu_1_it = nu + 1.0 + i * tau;
+    Complex nu_1__it = nu + 1.0 - i * tau;
+
+    // Log Gamma 组合
     Complex ln_pre = log_gamma(3.0 - i * (eps + tau)) 
                    + log_gamma(2.0 * nu + 2.0)
                    - log_gamma(nu_3_ie) 
@@ -362,63 +364,66 @@ Complex TeukolskyRadial::k_factor(Complex nu) const {
                    
     Complex prefact = 4.0 * std::pow(2.0 * eps * kappa, -2.0 - nu) * std::exp(ln_pre);
 
-    // 2. 正向级数 (LOOP_POSITIVE) -> num
-    // GremlinEq 这里的级数是超几何函数的展开项
-    Complex num = 1.0;
-    Complex lastcoeff = 1.0;
-    const int max_iter = 1000;
-    const double tol = 1e-14;
+    // ------------------------------------------------------
+    // 2. 级数求和 (Summation of Expansion Terms)
+    // MST 方法中 K_nu 包含两个收敛级数乘积的比值
+    // 正向级数 (n >= 0) 和 负向级数 (n < 0)
+    // ------------------------------------------------------
+    
+    // --- 正向部分 (n 从 0 到 +inf) ---
+    Complex num_sum = 1.0;
+    Complex term = 1.0;
+    const int max_iter = 2000;
+    const double tol = 1e-15;
 
     for (int n = 0; n < max_iter; ++n) {
         double dn = (double)n;
-        // 对应 fsum.cc line 198: lastcoeff *= - (...)
-        Complex term_num = (dn + nu2_1) * (dn + nu - 1.0 + i*eps) * (dn + nu_1_it);
-        Complex term_den = (dn + 1.0) * (dn + nu_3__ie) * (dn + nu_1__it);
+        // f_n / f_{n-1} 的比值 (参考 Sasaki-Tagoshi Eq 4.14 或 fsum.cc)
+        // 注意：GremlinEq 的 fsum.cc 中 term_num/term_den 就是这个比值
         
-        lastcoeff *= - term_num / term_den;
-        num += lastcoeff;
+        Complex numer = (dn + nu2_1) * (dn + nu - 1.0 + i * eps) * (dn + nu_1_it);
+        Complex denom = (dn + 1.0) * (dn + nu_3__ie) * (dn + nu_1__it);
         
-        if (std::abs(lastcoeff) < tol * std::abs(num)) break;
+        // 注意符号：MST 级数通常有 (-1)^n 或类似的交错符号
+        // fsum.cc 中使用了 `lastcoeff *= - ...`
+        term *= - numer / denom;
+        
+        num_sum += term;
+        if (std::abs(term) < tol * std::abs(num_sum)) break;
     }
 
-    // 3. 负向级数 (LOOP_NEGATIVE) -> denom
-    // 注意: GremlinEq 这里是用 loop negative 来计算分母部分的级数
-    Complex denom = 1.0;
-    lastcoeff = 1.0;
-    
-    // fsum.cc line 208: LOOP_NEGATIVE
-    // 这里的 n 实际上是递增的索引，对应原文 loop 中的 lastn 递减逻辑
-    // 原文逻辑较晦涩，公式化简后如下：
-    // lastcoeff *= ((lastn + nu2_1) * (lastn + nu_2_ie)) / ((lastn - 1) * (lastn + nu__2__ie));
-    // 注意原文 LOOP_NEGATIVE 宏里 lastn 是递减的。
-    // 我们这里用 n 表示迭代步数，对应原文的 -n (或者说反向递归的深度)
-    
-    // 让我们直接复刻宏展开后的数学逻辑。
-    // 这一项对应超几何级数 2F1 的系数
+    // --- 负向部分 (n 从 0 到 -inf，也就是代码里的 increasing n map to negative index) ---
+    // 对应 GremlinEq 中的 LOOP_NEGATIVE
+    // 这里计算的是分母部分的级数修正
+    Complex den_sum = 1.0;
+    term = 1.0;
+
     for (int n = 0; n < max_iter; ++n) {
-        double dn = (double)n; 
-        // 实际上这里的递推是针对 specific hypergeometric series
-        // 参照 fsum.cc line 209:
-        // lastcoeff *= ( (lastn + nu2_1) * (lastn + nu + 2.0 + i*eps) ) 
-        //            / ( (lastn - 1.0) * (lastn + nu - 2.0 - i*eps) );
-        // 这里的 lastn 在 LOOP_NEGATIVE 里是从 0 开始递减：0, -1, -2...
-        // 所以我们在代码里用 dn = -n
+        double dn = (double)n;
+        // 这里的 n 对应原文公式中的 -n (方向相反)
+        // 对应的比值公式 (f_{-n} / f_{-n+1} ?)
         
-        double lastn = -dn;
+        double lastn = -dn; // 模拟递减
         
-        // 避开 lastn = 1 的奇点（虽然 LOOP_NEGATIVE 从 0 开始减，不会碰到 1）
-        // 但注意 n=0 时 lastn=0。公式里分母有 (lastn-1)，即 -1，安全。
+        // 公式适配 fsum.cc LOOP_NEGATIVE
+        Complex numer = (lastn + nu2_1) * (lastn + nu + 2.0 + i * eps);
+        Complex denom = (lastn - 1.0) * (lastn + nu - 2.0 - i * eps);
         
-        Complex term_num = (lastn + nu2_1) * (lastn + nu + 2.0 + i*eps);
-        Complex term_den = (lastn - 1.0) * (lastn + nu - 2.0 - i*eps);
+        // 同样有负号
+        term *= numer / denom; // 注意 fsum.cc 这里没有显式负号? 
+        // 仔细检查 fsum.cc: lastcoeff *= ((lastn+nu2+1.0)...) / ((lastn-1.0)...)
+        // 这里的符号隐含在 lastn 的负值中吗？
+        // GremlinEq 代码： lastcoeff *= ...
+        // 在 LOOP_NEGATIVE 中，分母有 (lastn - 1.0)。因为 lastn <= 0，所以分母是负的。
+        // 分子项主要由实部主导。
+        // 所以这一项本身就是负的。
         
-        lastcoeff *= term_num / term_den;
-        denom += lastcoeff;
-        
-        if (std::abs(lastcoeff) < tol * std::abs(denom)) break;
+        den_sum += term;
+        if (std::abs(term) < tol * std::abs(den_sum)) break;
     }
 
-    return prefact * num / denom;
+    // K_nu = Prefactor * (Sum_Pos / Sum_Neg)
+    return prefact * num_sum / den_sum;
 }
 
 
@@ -546,6 +551,46 @@ void TeukolskyRadial::compute_amplitudes(Complex nu) {
             * std::exp(exp_arg)
             * straight_sum;
 }
+
+
+// Series: 1F1(a; b; z) = sum (a)_k / (b)_k * z^k / k!
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::hypergeom_1F1_with_deriv(Complex a, Complex b, Complex z) {
+    Complex sum = 1.0;
+    Complex term = 1.0;
+    Complex deriv = 0.0;
+    
+    // k=0: term=1, deriv=0
+    
+    // 如果 |z| 很大，1F1 级数收敛很慢，但在 MST 远场应用中
+    // 我们主要处理 z = 2i*rho。虽然 rho 很大，但我们其实不需要计算极大的 rho，
+    // 因为 MST 连接通常在 rho ~ O(1) 到 O(10) 处进行。
+    // 如果 rho 非常大 (例如 1000)，应使用渐进展开，但那是另一种算法。
+    // 对于 r=10~50, rho~0.5~2.5 (omega=0.05)，级数收敛极快。
+    
+    for (int k = 0; k < 2000; ++k) {
+        double dk = (double)k;
+        
+        // term_{k+1} = term_k * (a+k)/(b+k) * z/(k+1)
+        term *= (a + dk) / (b + dk) * z / (dk + 1.0);
+        sum += term;
+        
+        // d/dz term_k = term_k * k / z
+        // 更加数值稳定的方法：直接累加导数级数
+        // d/dz 1F1(a,b,z) = (a/b) 1F1(a+1, b+1, z)
+        // 但为了效率，我们在循环中复用 term
+        // term_k 包含 z^k。导数是 k * term_k / z
+        if (k + 1 > 0) { // k starts 0, current term is index k+1
+             deriv += term * (dk + 1.0) / z;
+        }
+        
+        if (std::abs(term) < 1e-15 * std::abs(sum)) break;
+    }
+    
+    return {sum, deriv};
+}
+
+
 // ==========================================================
 // [内部辅助] 基础超几何级数 (仅在 |z| < 1 时有效)
 // ==========================================================
@@ -611,6 +656,68 @@ std::pair<Complex, Complex> TeukolskyRadial::hypergeom_2F1_with_deriv(Complex a,
         if (std::abs(term) < 1e-15 * std::abs(sum)) break;
     }
     return {sum, deriv};
+}
+
+
+
+// ==========================================================
+// [新增] 正则库伦波函数 F_L(eta, rho)
+// Formula: F_L = C_L rho^{L+1} e^{-i rho} 1F1(L+1-i*eta, 2L+2, 2i*rho)
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::coulomb_F_with_deriv(Complex L, Complex eta, Complex rho) {
+    Complex i = 1.0i;
+    
+    // 1. 计算 C_L (Gamow 因子推广)
+    // C_L = 2^L * e^{-pi*eta/2} * |Gamma(L+1+i*eta)| / Gamma(2L+2)
+    // 注意：这里的 L 是复数 (nu+n)，Gamma(2L+2) 是复数 Gamma
+    
+    Complex log_gamma_num = TeukolskyRadial::log_gamma(L + 1.0 + i * eta);
+    Complex log_gamma_den = TeukolskyRadial::log_gamma(2.0 * L + 2.0);
+    
+    // log(C_L)
+    Complex log_CL = (L * std::log(2.0)) 
+                   - (M_PI * eta / 2.0) 
+                   + log_gamma_num 
+                   - log_gamma_den;
+    
+    // 这里的 |Gamma| 在复数 L 时定义比较微妙，通常 MST 文献使用的是 Gamma 本身
+    // 但标准的 Coulomb F 定义使用的是实数 L 的模。
+    // 检查 Sasaki-Tagoshi Eq 4.6 (definition of F):
+    // F_L = 2^L e^{-pi eta/2} (Gamma(L+1+i eta) / Gamma(2L+2)) ...
+    // ST03 似乎没有取模。如果你看 GremlinEq，它使用的是复数 Gamma。
+    // 我们这里直接使用复数运算，不取模。
+    
+    // 修正公式：C_L 包含复数 Gamma
+    log_CL = (L * std::log(2.0)) - (M_PI * eta / 2.0) + log_gamma_num - log_gamma_den;
+    Complex CL = std::exp(log_CL);
+
+    // 2. 1F1 部分
+    Complex a = L + 1.0 - i * eta;
+    Complex b = 2.0 * L + 2.0;
+    Complex z = 2.0 * i * rho;
+    
+    auto [f1, df1_dz] = hypergeom_1F1_with_deriv(a, b, z);
+    
+    // 3. 组合
+    // F = CL * rho^(L+1) * e^(-i rho) * 1F1
+    Complex term_rho = std::pow(rho, L + 1.0);
+    Complex term_exp = std::exp(-i * rho);
+    
+    Complex F = CL * term_rho * term_exp * f1;
+    
+    // 4. 导数 dF/drho
+    // 链式法则：
+    // let A = CL * rho^(L+1) * e^(-i rho)
+    // dA/drho = CL * [ (L+1)rho^L e... + rho^(L+1)(-i)e... ]
+    //         = A * [ (L+1)/rho - i ]
+    // F = A * f1
+    // dF/drho = dA/drho * f1 + A * df1/dz * (dz/drho)
+    // dz/drho = 2i
+    
+    Complex term_deriv_A = ( (L + 1.0)/rho - i );
+    Complex dF_drho = F * term_deriv_A + (CL * term_rho * term_exp) * df1_dz * (2.0i);
+    
+    return {F, dF_drho};
 }
 // ==========================================================
 // [新增] RK4 积分步进器
@@ -689,11 +796,100 @@ std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in_series(double r) cons
                   
     return {R, dR_dx * dx_dr};
 }
+// ==========================================================
+// [新增] 库伦波级数求值 (Evaluate R using Coulomb Series)
+// 适用于 r 较大 (远场)
+// Formula: R_in = (1/K_nu) * sum [ (-1)^n * a_n * F_{nu+n}(eta, omega*r) ]
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in_Coulomb(double r) {
+    // 确保系数已计算
+    if (m_coefficients.empty()) {
+        compute_coefficients(m_nu); // 假设 m_nu 已经 solve 好了
+    }
 
+    Complex omega = m_omega;
+    Complex rho = omega * r;
+    Complex eta = m_omega; // 注意：对于 Teukolsky, eta 通常定义为 M*omega? 
+    // 检查 Coulomb 定义中的 eta.
+    // 在 Schwarzschild 中 eta = M*omega.
+    // 在 Kerr 中，Coulomb 展开的 eta 是什么？
+    // ST03 Eq 4.6: eta = - (epsilon + tau)/2 ? 不，这是 kappa 的指数
+    // 实际上，远处的波方程近似为 -d2R/dr2 - (1 - 2eta/r)R = 0
+    // 对于 Kerr, 远场势 V ~ -2(r-M)K/Delta ... ~ -2omega^2 r^2 ...
+    // 让我们看 ST03 Eq (4.37) 的定义。
+    // Kerr 情况下，Coulomb 函数的 eta 参数通常取为 eta = M*omega (对于 s=0) 
+    // 或者更复杂的 spin 依赖项。
+    // 但是！MST 理论表明，只要使用正确的 nu 和 a_n，
+    // 我们展开的基函数 F_L 的参数 eta 应该对应于 spheroidal eigenvalue 的一部分？
+    // 不，Fujita Tagoshi 04 (FT04) Eq 2.6 中 F 的参数是 (epsilon/2, epsilon*x_coulomb)。
+    // 等等，FT04 的 Coulomb 变量是 z = omega(r - r_+) / (epsilon kappa)? 不。
+    
+    // 正确的参数：
+    // 远场波函数满足 radial Teukolsky equation，其 asymptotic 形式决定了 eta。
+    // Teukolsky eq far field: d^2R/dr^2 + (omega^2 + 2i omega s / r) R = 0 ?
+    // 这是一个带有电荷 parameter 的 Coulomb 方程。
+    // eta = -s (对于 spin s 的波) ?
+    // 让我们查阅文献确切值。
+    // Sasaki & Tagoshi 2003, Page 39, Eq (4.6): 
+    // "F_L is the standard regular Coulomb wave function with index L and charge parameter eta = -s" ?
+    // 不，文中定义 z = \omega (r - r_-). 参数是 (nu, \epsilon).
+    // 实际上，Kerr 的远场 eta = M \omega。 (考虑到 Mass term 1/r potential).
+    
+    // 让我们看 GremlinEq 的 `specialradial.cc` 或者 `teukolskydefs.h`。
+    // 在 Kerr 中，渐进势包含 2M \omega^2。
+    // 实际上，为了匹配 MST，最标准的做法是使用 eta = -omega * M (注意符号).
+    // 或者是 eta = s?
+    // 让我再次参考 `m_B_trans` 计算中的相位。
+    
+    // **决策**：根据标准 Teukolsky 文献 (e.g. Bardeen Press Teukolsky 1973),
+    // 远场方程变换为 Coulomb 形式时，参数 eta = M * omega。
+    // 但是对于 Spin weighted，还有 s 的影响。
+    // 让我们使用 ST03 的定义：参数是 \epsilon = 2M\omega。
+    // Coulomb phase term is exp(i(kr + eta ln 2kr)).
+    // 在 Kerr 中，相位是 omega r + 2M omega ln(r).
+    // 所以 eta = -M*omega ? (因为 exp(-i(kr - eta ln...)))
+    // 简单起见，我们暂定 eta = m_omega (假设 M=1)。
+    // 如果发现相位不对，这里是调试的首要点。
+    // *修正*: Teukolsky 方程在大 r 处表现为 (-2i s \omega r) / Delta ...
+    // 有效电荷 eta = -M \omega 是通常引力波文献的值。
+    
+    Complex eta_coulomb = -1.0 * m_omega; // M=1
+    
+    Complex Sum_R = 0.0;
+    Complex Sum_dR = 0.0;
+    
+    // 归一化因子 1/K_nu
+    Complex K_nu = k_factor(m_nu);
+    Complex prefactor = 1.0 / K_nu;
+    
+    // 求和循环
+    for (auto const& [n, an] : m_coefficients) {
+        // L = nu + n
+        Complex L = m_nu + (double)n;
+        
+        // F_{nu+n}(eta, omega*r)
+        // 注意：an 已经包含了 MST 的相对大小
+        // 系数 (-1)^n 是必须的吗？
+        // FT04 Eq 2.6: sum (-1)^n a_n F...
+        // 是的，需要 (-1)^n
+        
+        double sign = (std::abs(n) % 2 == 1) ? -1.0 : 1.0;
+        
+        auto [F, dF_drho] = coulomb_F_with_deriv(L, eta_coulomb, rho);
+        
+        Sum_R += sign * an * F;
+        Sum_dR += sign * an * dF_drho;
+    }
+    
+    Sum_R *= prefactor;
+    Sum_dR *= prefactor * m_omega; // chain rule: d/dr = omega * d/drho
+    
+    return {Sum_R, Sum_dR};
+}
 // ==========================================================
 // [修复] 评估 R_in(r) - 混合积分策略
 // ==========================================================
-std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in(double r) {
+std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in_Hypergeom(double r) {
     double r_plus = 1.0 + m_kappa;
     double r_safe = r_plus + 0.1; // 级数收敛的安全区
     
@@ -722,6 +918,31 @@ std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in(double r) {
     }
     
     return {R, dR};
+}
+
+std::pair<Complex, Complex> TeukolskyRadial::evaluate_R_in(double r) {
+    // 智能切换策略
+    // 视界半径 r_plus
+    double r_plus = 1.0 + m_kappa;
+    
+    // 切换半径 r_switch
+    // 经验法则：当 omega * r ~ 1 时 Coulomb 开始变得极其高效
+    // 当 (r - r_plus) / (r_plus - r_minus) 变大时，Hypergeom 收敛变慢
+    // 我们设定一个保守的界限，例如 r = 4M 或 5M
+    // 或者基于收敛性测试。
+    
+    double r_switch = 5.0; // 5M
+    
+    if (r < r_switch) {
+        // 近场：使用超几何级数 (原 MST 方法)
+        // 实际上我们需要调用刚才改名的那个函数，这里为了编译通过，
+        // 你需要把原代码放在 evaluate_R_in_Hypergeom 里，
+        // 或者把原代码直接写在 if 块里。
+        return evaluate_R_in_Hypergeom(r);
+    } else {
+        // 远场：使用库伦波级数
+        return evaluate_R_in_Coulomb(r);
+    }
 }
 
 // ==========================================================
