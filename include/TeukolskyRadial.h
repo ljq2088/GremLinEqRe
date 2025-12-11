@@ -141,17 +141,7 @@
     
     // 计算 K_nu 因子 (包含无穷级数求和)
     Complex k_factor(Complex nu) const;
-    // 计算 A_minus 因子 (用于 C_trans)
-    // 对应 GremlinEq/src/fujtag/fsum.cc 中的 aminus 函数
-    Complex calc_aminus(Complex nu) const;
-    // 内部辅助：超几何函数 2F1(a,b;c;z)
-    static std::pair<Complex, Complex> hypergeom_series(Complex a, Complex b, Complex c, Complex z);
-    static std::pair<Complex, Complex> hypergeom_2F1_with_deriv(Complex a, Complex b, Complex c, Complex z); 
-    void rk4_step(double r, Complex& R, Complex& dR, double h) const;
-    std::pair<Complex, Complex> evaluate_R_in_series(double r) const;
-    static std::pair<Complex, Complex> hypergeom_1F1_with_deriv(Complex a, Complex b, Complex z);
-    // L = nu + n (复数), rho = omega * r
-    static std::pair<Complex, Complex> coulomb_F_with_deriv(Complex L, Complex eta, Complex rho);
+
 
  };
  
