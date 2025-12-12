@@ -19,13 +19,13 @@ def test_schwarzschild_limit():
     print("\n[Test 1] Schwarzschild Limit (a=0)")
     
     a = 0.0
-    omega = 0.01 # 低频
+    omega = 0.001 # 低频
     s = -2
     l = 2
     m = 2
     # Schwarzschild 极限下的 lambda (自旋加权球谐函数特征值)
     # lambda = (l-s)(l+s+1) = (2 - (-2)) * (2 + (-2) + 1) = 4 * 1 = 4
-    # Wait, FT2004 Appendix A says lambda = l(l+1) - s(s+1)
+    # lambda = l(l+1) - s(s+1)
     # lambda = 2*3 - (-2)*(-1) = 6 - 2 = 4. Correct.
     lam = 4.0 
     

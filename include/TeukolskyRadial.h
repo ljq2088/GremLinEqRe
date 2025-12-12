@@ -38,24 +38,8 @@
      * 暴露此接口主要用于调试和验证
      */
     Complex calc_g(Complex nu) const;
-    /**
-     * @brief 计算 MST 级数展开系数 a_n
-     * 对应 GremlinEq 中的 minimal solution 生成逻辑
-     * @param nu 特征值
-     */
-    void compute_coefficients(Complex nu);
 
-    /**
-     * @brief 获取计算好的系数 a_n (用于调试或外部计算)
-     */
-    Complex get_coef(int n) const;
-
-    /**
-     * @brief 计算渐进振幅
-     * 对应 GremlinEq/src/fujtag/fsum.cc 中的 asympt_amps
-     * 计算结果存储在成员变量中
-     */
-    void compute_amplitudes(Complex nu);
+ 
 
     // 获取振幅 (计算通量所需)
     Complex get_B_inc() const { return m_B_inc; }

@@ -96,33 +96,33 @@ Complex TeukolskyRadial::log_gamma(Complex z) {
 Complex TeukolskyRadial::coeff_alpha(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
     Complex iepskappa = 1.0i * m_epsilon * m_kappa;
-    Complex m_s_1=std::complex<double>(m_s, 0.0);
+    
     Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
     return (iepskappa * n_nu * (2.0 * n_nu - 1.0)
-           * ((n_nu + 1.0 + m_s_1)*(n_nu + 1.0 + m_s_1) + m_epsilon_sq)
-           * (n_nu + 1.0 + 1.0i * m_tau))/deno;
+           * ((n_nu + 1.0 + (double)m_s)*(n_nu + 1.0 + (double)m_s) + m_epsilon_sq)
+           * (n_nu + 1.0 + 1.0i * m_tau));
 }
 
 Complex TeukolskyRadial::coeff_gamma(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
     Complex iepskappa = 1.0i * m_epsilon * m_kappa;
-    Complex m_s_1=std::complex<double>(m_s, 0.0);
+    
     Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
     return (-iepskappa * (n_nu + 1.0) * (2.0 * n_nu + 3.0)
-           * ((n_nu - m_s_1)*(n_nu - m_s_1) + m_epsilon_sq)
-           * (n_nu - 1.0i * m_tau))/deno;
+           * ((n_nu - (double)m_s)*(n_nu - (double)m_s) + m_epsilon_sq)
+           * (n_nu - 1.0i * m_tau));
 }
 
 Complex TeukolskyRadial::coeff_beta(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
-    Complex m_s_1=std::complex<double>(m_s, 0.0);
+    
     Complex term1 = n_nu * (n_nu + 1.0); 
     
-    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * q - m_lambda + m_s_1*(m_s_1 + 1.0);
-    Complex b_add2 = m_epsilon * (m_epsilon - m_m * q) * (m_s_1*m_s_1 + m_epsilon_sq);
+    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * q - m_lambda + (double)m_s*((double)m_s + 1.0);
+    Complex b_add2 = m_epsilon * (m_epsilon - m_m * q) * ((double)m_s*(double)m_s + m_epsilon_sq);
     Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
     return  ((term1 * (term1 + b_add1) + b_add2)
-           * (2.0* n_nu + 3.0) * (2.0*n_nu - 1.0))/deno;
+           * (2.0* n_nu + 3.0) * (2.0*n_nu - 1.0));
 }
 
 Complex TeukolskyRadial::continued_fraction(Complex nu, int direction) const {
