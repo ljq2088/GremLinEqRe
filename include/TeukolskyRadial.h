@@ -90,32 +90,7 @@
       */
      Complex continued_fraction(Complex nu, int direction) const;
  
-    /**
-     * @brief 计算径向函数 R_in(r) 及其对 r 的导数
-     * @param r BL 坐标半径
-     * @return pair<R, dR/dr>
-     */
-    std::pair<Complex, Complex> evaluate_R_in(double r);
-
-    // [新增] 强制使用库伦波级数求值 (用于远场)
-    std::pair<Complex, Complex> evaluate_R_in_Coulomb(double r);
-
-    // [新增] 强制使用超几何级数求值 (用于近场，即原来的 evaluate_R_in)
-    std::pair<Complex, Complex> evaluate_R_in_Hypergeom(double r);
-
-    /**
-     * @brief 计算径向函数 R_up(r) 及其对 r 的导数
-     * (利用 R_in 和 R_up 的关系或独立级数)
-     */
-    std::pair<Complex, Complex> evaluate_R_up(double r);
-    
-    // 获取二阶导数 (利用 Teukolsky 方程 V(r) 反推，不需要数值差分)
-    Complex evaluate_ddR(double r, Complex R, Complex dR) const;
-
-    
-    // Getters for parameters (needed by Source)
-    Real get_omega() const { return m_omega; }
-    int get_m() const { return m_m; }
+     std::map<int, std::complex<double>> ComputeSeriesCoefficients(std::complex<double> nu, int n_max);
  private:
      Real m_a;
      Real m_omega;
@@ -127,6 +102,7 @@
      // 常用中间变量，预计算以提高效率
      Real m_epsilon;   // 2 * omega
      Real m_kappa;     // sqrt(1 - q^2)
+     Real q;
      Real m_tau;       // (epsilon - m*q) / kappa
      Complex m_epsilon_sq;
      Complex m_tau_sq;

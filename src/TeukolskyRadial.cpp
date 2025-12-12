@@ -48,7 +48,7 @@ TeukolskyRadial::TeukolskyRadial(Real a_spin, Real omega, int s, int l, int m, R
     : m_a(a_spin), m_omega(omega), m_s(s), m_l(l), m_m(m), m_lambda(lambda)
 {
     m_epsilon = 2.0 * m_omega;
-    Real q = m_a;
+    q = m_a;
     
     m_kappa = std::sqrt(1.0 - q * q);
     m_tau = (m_epsilon - m_m * q) / m_kappa;
@@ -92,34 +92,37 @@ Complex TeukolskyRadial::log_gamma(Complex z) {
     
     return tmp + std::log(2.5066282746310005 * ser / x);
 }
-
+//注意到这里的递推系数全是通分的，并且代入了s=-2
 Complex TeukolskyRadial::coeff_alpha(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
     Complex iepskappa = 1.0i * m_epsilon * m_kappa;
-    
-    return iepskappa * n_nu * (2.0 * n_nu - 1.0)
-           * ((n_nu - 1.0)*(n_nu - 1.0) + m_epsilon_sq)
-           * (n_nu + 1.0 + 1.0i * m_tau);
+    Complex m_s_1=std::complex<double>(m_s, 0.0);
+    Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
+    return (iepskappa * n_nu * (2.0 * n_nu - 1.0)
+           * ((n_nu + 1.0 + m_s_1)*(n_nu + 1.0 + m_s_1) + m_epsilon_sq)
+           * (n_nu + 1.0 + 1.0i * m_tau))/deno;
 }
 
 Complex TeukolskyRadial::coeff_gamma(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
     Complex iepskappa = 1.0i * m_epsilon * m_kappa;
-    
-    return -iepskappa * (n_nu + 1.0) * (2.0 * n_nu + 3.0)
-           * ((n_nu + 2.0)*(n_nu + 2.0) + m_epsilon_sq)
-           * (n_nu - 1.0i * m_tau);
+    Complex m_s_1=std::complex<double>(m_s, 0.0);
+    Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
+    return (-iepskappa * (n_nu + 1.0) * (2.0 * n_nu + 3.0)
+           * ((n_nu - m_s_1)*(n_nu - m_s_1) + m_epsilon_sq)
+           * (n_nu - 1.0i * m_tau))/deno;
 }
 
 Complex TeukolskyRadial::coeff_beta(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
+    Complex m_s_1=std::complex<double>(m_s, 0.0);
     Complex term1 = n_nu * (n_nu + 1.0); 
     
-    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * m_a - m_lambda - 2.0;
-    Complex b_add2 = m_epsilon * (m_epsilon - m_m * m_a) * (4.0 + m_epsilon_sq);
-    
-    return 4.0 * (term1 * (term1 + b_add1) + b_add2)
-           * (n_nu + 1.5) * (n_nu - 0.5);
+    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * q - m_lambda + m_s_1*(m_s_1 + 1.0);
+    Complex b_add2 = m_epsilon * (m_epsilon - m_m * q) * (m_s_1*m_s_1 + m_epsilon_sq);
+    Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
+    return  ((term1 * (term1 + b_add1) + b_add2)
+           * (2.0* n_nu + 3.0) * (2.0*n_nu - 1.0))/deno;
 }
 
 Complex TeukolskyRadial::continued_fraction(Complex nu, int direction) const {
@@ -334,3 +337,70 @@ Complex TeukolskyRadial::k_factor(Complex nu) const {
 }
 
 
+// 辅助函数：获取第 n 阶的 MST 递推系数 alpha, beta, gamma
+// 预期功能：对接现有的数学公式模块，返回对应 n 和 nu 的系数
+
+
+// 主函数：计算级数系数 a_n
+// 接口：输入重整化角动量 nu 和截断阶数 n_max，返回索引为 n 的系数 map
+std::map<int, std::complex<double>> TeukolskyRadial::ComputeSeriesCoefficients(std::complex<double> nu, int n_max) {
+    std::map<int, std::complex<double>> a_coeffs;
+    
+    // 设定种子条件，MST 方法通常归一化 a_0 = 1
+    a_coeffs[0] = std::complex<double>(1.0, 0.0);
+
+    // ---------------------------------------------------
+    // 1. 正向部分 (n > 0): 计算比值 R_n = a_n / a_{n-1}
+    // 递推式: alpha_n * R_n * R_{n+1} + beta_n * R_n + gamma_n = 0
+    // 变形为连分数: R_n = -gamma_n / (beta_n + alpha_n * R_{n+1})
+    // ---------------------------------------------------
+    std::vector<std::complex<double>> R(n_max + 2, 0.0);
+    
+    // 从无穷远 (n_max) 向内逆推比值
+    for (int n = n_max; n >= 1; --n) {
+        std::complex<double> alph, bet, gam;
+
+        alph=coeff_alpha(nu, n);
+        bet=coeff_beta(nu, n);
+        gam=coeff_gamma(nu, n);
+        // 连分数迭代
+        std::complex<double> denominator = bet + alph * R[n + 1];
+        if (std::abs(denominator) < 1e-15) denominator = 1e-15; // 避免除零
+        R[n] = -gam / denominator;
+    }
+
+    // 从 a_0 向外计算系数
+    for (int n = 1; n <= n_max; ++n) {
+        a_coeffs[n] = a_coeffs[n - 1] * R[n];
+    }
+
+    // ---------------------------------------------------
+    // 2. 负向部分 (n < 0): 计算比值 r_k = a_{-k} / a_{-k+1}
+    // 令 k = -n (k > 0)。我们求解 r_k = a_{-k} / a_{-(k-1)}
+    // 对应的连分数: r_k = -alpha_{-k} / (beta_{-k} + gamma_{-k} * r_{k+1})
+    // ---------------------------------------------------
+    std::vector<std::complex<double>> r(n_max + 2, 0.0);
+
+    // 从负无穷 (-n_max) 向内逆推比值
+    for (int k = n_max; k >= 1; --k) {
+        std::complex<double> alph, bet, gam;
+        
+        alph = coeff_alpha(nu, -k);
+        bet = coeff_beta(nu, -k);
+        gam = coeff_gamma(nu, -k);
+
+        // 注意：对于 n < 0，MST 递推关系中 alpha 对应外项，gamma 对应内项
+        // 公式结构与正向对称，但在比值定义中：
+        // a_n / a_{n+1} (即 r_k) 的连分数通常依赖于更深处的项
+        std::complex<double> denominator = bet + gam * r[k + 1];
+        if (std::abs(denominator) < 1e-15) denominator = 1e-15;
+        r[k] = -alph / denominator;
+    }
+
+    // 从 a_0 向负方向计算系数
+    for (int k = 1; k <= n_max; ++k) {
+        a_coeffs[-k] = a_coeffs[-k + 1] * r[k];
+    }
+
+    return a_coeffs;
+}
