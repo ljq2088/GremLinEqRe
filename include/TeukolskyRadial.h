@@ -14,11 +14,24 @@
  
  using Real = double;
  using Complex = std::complex<double>;
- 
+ struct AsymptoticAmplitudes {
+   std::complex<double> R_in_coef_inf_inc;   // R^in 在无穷远的入射系数 (对应 r^{-1} e^{-i*omega*r*})
+   std::complex<double> R_in_coef_inf_trans; // R^in 在无穷远的透射系数 (对应 r^{-(2s+1)} e^{+i*omega*r*})
+   // 如果需要 R^up 的系数也可以加在这里
+};
+// 存放物理散射系数和 Wronskian
+struct PhysicalAmplitudes {
+   std::complex<double> B_trans; // Horizon transmission coeff of R^in
+   std::complex<double> B_inc;   // Infinity incidence coeff of R^in
+   std::complex<double> B_ref;   // Infinity reflection coeff of R^in
+   std::complex<double> C_trans; // Infinity transmission coeff of R^up (outgoing)
+};
+
  class TeukolskyRadial {
  public:
     /**
      * @brief 构造函数
+     * @param M 黑洞质量
      * @param a_spin 黑洞自旋 a (a/M)
      * @param omega 频率 omega (M*omega)
      * @param s 自旋权重 (对于引力波通常为 -2)
@@ -31,22 +44,18 @@
      * @param nu_guess 初始猜测值
      * @return 收敛后的 nu
      */
-    Complex solve_nu(Complex nu_guess) const;
+   Complex solve_nu(Complex nu_guess) const;
     /**
      * @brief 计算方程残差 g(nu)
      * g(nu) = beta_0 + alpha_0 * R_1 + gamma_0 * L_-1
      * 暴露此接口主要用于调试和验证
      */
-    Complex calc_g(Complex nu) const;
+   Complex calc_g(Complex nu) const;
 
  
 
-    // 获取振幅 (计算通量所需)
-    Complex get_B_inc() const { return m_B_inc; }
-    Complex get_B_trans() const { return m_B_trans; }
-    Complex get_C_trans() const { return m_C_trans; }
-    
-    TeukolskyRadial(Real a_spin, Real omega, int s, int l, int m, Real lambda);
+
+   TeukolskyRadial(Real M, Real a_spin, Real omega, int s, int l, int m, Real lambda);
  
      // ==========================================================
      // 基础工具函数
@@ -61,9 +70,9 @@
  
      // 计算 MST 级数系数 alpha_n, beta_n, gamma_n
      // n 是级数索引
-     Complex coeff_alpha(Complex nu, int n) const;
-     Complex coeff_beta(Complex nu, int n) const;
-     Complex coeff_gamma(Complex nu, int n) const;
+   Complex coeff_alpha(Complex nu, int n) const;
+   Complex coeff_beta(Complex nu, int n) const;
+   Complex coeff_gamma(Complex nu, int n) const;
  
      /**
       * @brief 计算连分式的值
@@ -72,10 +81,13 @@
       * @param direction +1 表示向 n 正无穷求和 (收敛部分)，-1 表示向负无穷
       * @return 连分式的值
       */
-     Complex continued_fraction(Complex nu, int direction) const;
- 
-     std::map<int, std::complex<double>> ComputeSeriesCoefficients(std::complex<double> nu, int n_max);
+   Complex continued_fraction(Complex nu, int direction) const;
+   std::map<int, std::complex<double>> ComputeSeriesCoefficients(std::complex<double> nu, int n_max);
+   PhysicalAmplitudes ComputePhysicalAmplitudes(std::complex<double> nu, 
+      const std::map<int, std::complex<double>>& a_coeffs,
+      const AsymptoticAmplitudes& amps_nu);
  private:
+     Real m_M;
      Real m_a;
      Real m_omega;
      int m_s;
@@ -92,18 +104,103 @@
      Complex m_tau_sq;
     // ===存储特征值 nu ===
     Complex m_nu;
-    // 使用 map 存储系数 a_n，支持负索引
-    std::map<int, Complex> m_coefficients;
-    // 渐进振幅
-    Complex m_B_inc;   // 入射波振幅 (Infinity -> Horizon)
-    Complex m_B_trans; // 透射波振幅 (Horizon)
-    Complex m_C_trans; // 透射波振幅 (Infinity)
+
+
+    
     
     // 计算 K_nu 因子 (包含无穷级数求和)
     Complex k_factor(Complex nu) const;
-
+    // 输入: nu, 以及之前算好的级数系数 map a_coeffs
+    AsymptoticAmplitudes ComputeAmplitudes(std::complex<double> nu, 
+      const std::map<int, std::complex<double>>& a_coeffs);
+   PhysicalAmplitudes ComputePhysicalAmplitudes(
+      std::complex<double> nu,
+      const AsymptoticAmplitudes& amp_nu,        // nu 分支的 A+, A-
+      std::complex<double> K_nu,                 // nu 分支的 K因子
+      const AsymptoticAmplitudes& amp_minus_nu,  // -nu-1 分支的 A+, A-
+      std::complex<double> K_minus_nu            // -nu-1 分支的 K因子
+   );
 
  };
  
  #endif // TEUKOLSKY_RADIAL_H
 
+// 辅助常数定义，方便后续公式书写
+// 建议在类中定义或作为局部常量
+// const Complex I = 1.0i;
+
+AsymptoticAmplitudes TeukolskyRadial::ComputeAmplitudes(std::complex<double> nu, 
+   const std::map<int, std::complex<double>>& a_coeffs) {
+AsymptoticAmplitudes amps;
+
+// 准备物理参数
+Complex omega = m_omega; // 注意区分 m_omega 和 epsilon
+Complex epsilon = m_epsilon;
+Complex kappa = m_kappa;
+Complex tau = m_tau; // (epsilon - m*q)/kappa
+
+// 计算 K_nu 因子 (Eq. 4.25)
+// 你之前已经实现了 k_factor(nu)，这里直接调用
+Complex K_nu = k_factor(nu);
+
+// -------------------------------------------------------------------------
+// 第一步：计算无穷级数求和 S_nu
+// 对应 Sasaki & Tagoshi Eq. 4.34 中定义的级数部分
+// S_nu = Sum_{n} (-1)^n * a_n * (n + nu + 1 + s + i*epsilon) ... / (n + nu + 1 - i*tau) ...
+// 注意：这里的公式极其繁琐，请务必对着论文仔细核对分子分母
+// -------------------------------------------------------------------------
+Complex sum_series = 0.0;
+
+// 遍历所有已计算的系数 a_n (包括负数索引)
+for (auto const& [n, a_n_val] : a_coeffs) {
+double dn = (double)n;
+Complex term = 0.0;
+
+// [填空 1] 请输入级数求和项的公式
+// 参考 LRR-2003-6 Eq. 4.34 (或其他定义 A+ A- 的公式)
+// 提示：通常涉及 Gamma 函数比值或直接的多项式因子
+// Sasaki Tagoshi 的 Eq 4.30-4.33 展开中，系数 explicit form 比较复杂
+// 有时使用 Eq. 4.19 的 a_n 定义代入 Eq. 4.34
+
+// 伪代码示例 (请替换为真实公式):
+// Complex numer = (dn + nu + 1.0 + m_s + 1.0i * epsilon); // ... 更多项
+// Complex denom = (dn + nu + 1.0 - 1.0i * tau);            // ... 更多项
+// term = std::pow(-1.0, dn) * a_n_val * (numer / denom);
+
+sum_series += term;
+}
+
+// -------------------------------------------------------------------------
+// 第二步：计算 A+ 和 A- (或 C_trans, C_inc) 的前置因子
+// 对应 Eq. 4.32 和 4.33 (以及 4.30 的系数)
+// 这些系数包含 Gamma 函数、2^(...)、epsilon^(...) 等
+// -------------------------------------------------------------------------
+
+Complex A_plus = 0.0; 
+Complex A_minus = 0.0;
+
+// [填空 2] 计算 A_minus (对应入射波系数系数，通常相关联于 r^{-1} e^{-i wr})
+// 参考 LRR Eq. 4.32 (C^{trans} in their notation for R^in? Need check definition)
+// 注意：Sasaki & Tagoshi 定义 R^in ~ A^- r^{-1} e^{-iwr} + A^+ r^{-2s-1} e^{+iwr} (Eq 4.30)
+// 公式包含: 2^{-s-i*epsilon} * exp(...) * Gamma(...) * K_nu 等
+// A_minus = ...
+
+// [填空 3] 计算 A_plus (对应反射/透射波系数)
+// 参考 LRR Eq. 4.33
+// 注意：A_plus 和 A_minus 之间通常有一个简单的对称关系或通过 K_nu 联系
+// A_plus = ...
+
+
+// -------------------------------------------------------------------------
+// 第三步：组装最终结果
+// 根据 Eq. 4.30 将 A+, A- 映射到代码的输出结构
+// -------------------------------------------------------------------------
+
+// 通常定义：
+// R_in_inf ~ Z_in * (exp(-iwr)/r) + Z_refl * (exp(iwr)/r^{2s+1})
+
+amps.R_in_coef_inf_inc = A_minus;   // 需确认 A- 是否对应入射项
+amps.R_in_coef_inf_trans = A_plus;  // 需确认 A+ 是否对应外行项
+
+return amps;
+}

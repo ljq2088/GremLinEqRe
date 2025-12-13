@@ -44,11 +44,11 @@ static Complex sinln(const Complex& x) {
     }
 }
 
-TeukolskyRadial::TeukolskyRadial(Real a_spin, Real omega, int s, int l, int m, Real lambda)
-    : m_a(a_spin), m_omega(omega), m_s(s), m_l(l), m_m(m), m_lambda(lambda)
+TeukolskyRadial::TeukolskyRadial(Real M,Real a_spin, Real omega, int s, int l, int m, Real lambda)
+    : m_M(M),m_a(a_spin), m_omega(omega), m_s(s), m_l(l), m_m(m), m_lambda(lambda)
 {
-    m_epsilon = 2.0 * m_omega;
-    q = m_a;
+    m_epsilon = 2.0* m_omega;//输入的ω应是Kerr频率×M(还有国际单位的因子)
+    q = m_a;//考虑a是M的量纲
     
     m_kappa = std::sqrt(1.0 - q * q);
     m_tau = (m_epsilon - m_m * q) / m_kappa;
@@ -92,7 +92,7 @@ Complex TeukolskyRadial::log_gamma(Complex z) {
     
     return tmp + std::log(2.5066282746310005 * ser / x);
 }
-//注意到这里的递推系数全是通分的，并且代入了s=-2
+
 Complex TeukolskyRadial::coeff_alpha(Complex nu, int n) const {
     Complex n_nu = nu + (double)n;
     Complex iepskappa = 1.0i * m_epsilon * m_kappa;
@@ -118,7 +118,7 @@ Complex TeukolskyRadial::coeff_beta(Complex nu, int n) const {
     
     Complex term1 = n_nu * (n_nu + 1.0); 
     
-    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * q - m_lambda + (double)m_s*((double)m_s + 1.0);
+    Complex b_add1 = 2.0 * m_epsilon_sq - m_epsilon * m_m * q - m_lambda - (double)m_s*((double)m_s + 1.0);
     Complex b_add2 = m_epsilon * (m_epsilon - m_m * q) * ((double)m_s*(double)m_s + m_epsilon_sq);
     Complex deno=n_nu*(n_nu + 1.0)*(2.0*n_nu -1.0)*(2.0*n_nu +3.0);
     return  ((term1 * (term1 + b_add1) + b_add2)
@@ -142,6 +142,8 @@ Complex TeukolskyRadial::continued_fraction(Complex nu, int direction) const {
         
         Complex a_k, b_k;
         
+        // 注意：这里的 definition 导致 a_1 包含了 alpha_0 (当 dir>0) 或 alpha_-1 (当 dir<0)
+        // 所以计算出的连分式 f 实际上是 alpha_0 * R_1 或 gamma_0 * L_-1
         if (direction > 0) {
             a_k = -coeff_alpha(nu, n - 1) * coeff_gamma(nu, n);
             b_k = coeff_beta(nu, n);
@@ -153,48 +155,34 @@ Complex TeukolskyRadial::continued_fraction(Complex nu, int direction) const {
         // Modified Lentz iteration
         D = b_k + a_k * D;
         if (std::abs(D) < tiny) D = tiny;
-        
         C = b_k + a_k / C;
         if (std::abs(C) < tiny) C = tiny;
-        
         D = 1.0 / D;
         Complex delta = C * D;
         f *= delta;
-        
-        if (std::abs(delta - 1.0) < tol) {
-            return f;
-        }
+        if (std::abs(delta - 1.0) < tol) return f;
     }
-    
     std::cerr << "Warning: Continued fraction did not converge." << std::endl;
     return f;
 }
-// ==========================================================
-// 求解特征值 nu
-// 核心方程: g(nu) = beta_0 + alpha_0 * R_1(nu) + gamma_0 * L_-1(nu) = 0
-// 参考: Fujita & Tagoshi (2004) Eq. (3-6)
-// ==========================================================
+
+// ----------------------------------------------------------
+// 修正后的求解特征值方程 g(nu)
+// ----------------------------------------------------------
 
 Complex TeukolskyRadial::calc_g(Complex nu) const {
-    // 1. 获取 n=0 时的 MST 系数
-    Complex a0 = coeff_alpha(nu, 0);
+    // 1. 获取 n=0 时的 MST 系数 (仅用于 beta_0)
     Complex b0 = coeff_beta(nu, 0);
-    Complex g0 = coeff_gamma(nu, 0);
     
-    // 2. 计算连分式
-    // R_1: 从 n=1 向正无穷收敛 (direction = +1)
-    // 对应 FT04 Eq. (2-14) R_n = -gamma_n / (beta_n + alpha_n * R_{n+1})
-    // 我们的 continued_fraction(nu, 1) 计算的就是这个 R_1
-    Complex R1 = continued_fraction(nu, 1);
+    // [FIX 2] 不再重复乘 alpha_0 和 gamma_0
+    // continued_fraction(nu, 1) 已经返回了 alpha_0 * R_1
+    // continued_fraction(nu, -1) 已经返回了 gamma_0 * L_-1
     
-    // L_-1: 从 n=-1 向负无穷收敛 (direction = -1)
-    // 对应 FT04 Eq. (2-15) L_n = -alpha_n / (beta_n + gamma_n * L_{n-1})
-    // 我们的 continued_fraction(nu, -1) 计算的就是这个 L_-1
-    Complex L_minus1 = continued_fraction(nu, -1);
+    Complex term_R = continued_fraction(nu, 1);     // = alpha_0 * R_1
+    Complex term_L = continued_fraction(nu, -1);    // = gamma_0 * L_-1
     
-    // 3. 组合方程
     // g(nu) = beta_0 + alpha_0 * R_1 + gamma_0 * L_-1
-    return b0 + a0 * R1 + g0 * L_minus1;
+    return b0 + term_R + term_L;
 }
 
 
@@ -245,7 +233,7 @@ Complex TeukolskyRadial::solve_nu(Complex nu_guess) const {
     return x1;
 }
 
-
+//注意到这里代入了s=-2
 Complex TeukolskyRadial::k_factor(Complex nu) const {
     Complex eps = m_epsilon;
     Complex tau = m_tau;
@@ -345,62 +333,251 @@ Complex TeukolskyRadial::k_factor(Complex nu) const {
 // 接口：输入重整化角动量 nu 和截断阶数 n_max，返回索引为 n 的系数 map
 std::map<int, std::complex<double>> TeukolskyRadial::ComputeSeriesCoefficients(std::complex<double> nu, int n_max) {
     std::map<int, std::complex<double>> a_coeffs;
-    
-    // 设定种子条件，MST 方法通常归一化 a_0 = 1
     a_coeffs[0] = std::complex<double>(1.0, 0.0);
 
-    // ---------------------------------------------------
     // 1. 正向部分 (n > 0): 计算比值 R_n = a_n / a_{n-1}
-    // 递推式: alpha_n * R_n * R_{n+1} + beta_n * R_n + gamma_n = 0
-    // 变形为连分数: R_n = -gamma_n / (beta_n + alpha_n * R_{n+1})
-    // ---------------------------------------------------
+    // R_n = -gamma_n / (beta_n + alpha_n * R_{n+1})
     std::vector<std::complex<double>> R(n_max + 2, 0.0);
     
-    // 从无穷远 (n_max) 向内逆推比值
     for (int n = n_max; n >= 1; --n) {
-        std::complex<double> alph, bet, gam;
-
-        alph=coeff_alpha(nu, n);
-        bet=coeff_beta(nu, n);
-        gam=coeff_gamma(nu, n);
-        // 连分数迭代
+        std::complex<double> alph = coeff_alpha(nu, n);
+        std::complex<double> bet  = coeff_beta(nu, n);
+        std::complex<double> gam  = coeff_gamma(nu, n);
+        
         std::complex<double> denominator = bet + alph * R[n + 1];
-        if (std::abs(denominator) < 1e-15) denominator = 1e-15; // 避免除零
+        if (std::abs(denominator) < 1e-15) denominator = 1e-15;
         R[n] = -gam / denominator;
     }
-
-    // 从 a_0 向外计算系数
     for (int n = 1; n <= n_max; ++n) {
         a_coeffs[n] = a_coeffs[n - 1] * R[n];
     }
 
-    // ---------------------------------------------------
     // 2. 负向部分 (n < 0): 计算比值 r_k = a_{-k} / a_{-k+1}
-    // 令 k = -n (k > 0)。我们求解 r_k = a_{-k} / a_{-(k-1)}
-    // 对应的连分数: r_k = -alpha_{-k} / (beta_{-k} + gamma_{-k} * r_{k+1})
-    // ---------------------------------------------------
+    // r_k = -alpha_{-k} / (beta_{-k} + gamma_{-k} * r_{k+1})
     std::vector<std::complex<double>> r(n_max + 2, 0.0);
 
-    // 从负无穷 (-n_max) 向内逆推比值
     for (int k = n_max; k >= 1; --k) {
-        std::complex<double> alph, bet, gam;
-        
-        alph = coeff_alpha(nu, -k);
-        bet = coeff_beta(nu, -k);
-        gam = coeff_gamma(nu, -k);
+        // 注意系数索引是 -k
+        std::complex<double> alph = coeff_alpha(nu, -k);
+        std::complex<double> bet  = coeff_beta(nu, -k);
+        std::complex<double> gam  = coeff_gamma(nu, -k);
 
-        // 注意：对于 n < 0，MST 递推关系中 alpha 对应外项，gamma 对应内项
-        // 公式结构与正向对称，但在比值定义中：
-        // a_n / a_{n+1} (即 r_k) 的连分数通常依赖于更深处的项
         std::complex<double> denominator = bet + gam * r[k + 1];
         if (std::abs(denominator) < 1e-15) denominator = 1e-15;
         r[k] = -alph / denominator;
     }
-
-    // 从 a_0 向负方向计算系数
     for (int k = 1; k <= n_max; ++k) {
         a_coeffs[-k] = a_coeffs[-k + 1] * r[k];
     }
 
     return a_coeffs;
+}
+// ==========================================================
+// 计算渐近振幅 (Asymptotic Amplitudes)
+// 对应 Sasaki & Tagoshi (2003) LRR-2003-6 Section 4.4
+// ==========================================================
+
+// ==========================================================
+// 计算 MST 渐近振幅系数 A+ 和 A-
+// 依据: Sasaki & Tagoshi (2003), Living Rev. Relativity 6
+// 对应 PDF 中的 Equation 157 和 158 (Page 33)
+// ==========================================================
+
+AsymptoticAmplitudes TeukolskyRadial::ComputeAmplitudes(std::complex<double> nu, 
+    const std::map<int, std::complex<double>>& a_coeffs) {
+AsymptoticAmplitudes amps;
+
+// 物理参数缩写
+Complex eps = m_epsilon;       // epsilon = 2M*omega
+Complex s_c(m_s, 0.0);         // spin s
+Complex i(0.0, 1.0);           // imaginary unit
+double PI = M_PI;
+
+// 辅助变量 nu+1
+Complex nu1 = nu + 1.0;
+
+// -------------------------------------------------------------------------
+// 1. 计算 A_plus (Eq. 157)
+// 对应无穷远处的入射波 (Incoming wave at infinity, R_+)
+// Formula: 
+// A_+ = e^{-pi*eps/2} * e^{i*pi*(nu+1-s)/2} * 2^{-1+s-i*eps} 
+//       * [Gamma(nu+1-s+i*eps) / Gamma(nu+1+s-i*eps)] * Sum(f_n)
+// -------------------------------------------------------------------------
+
+// (1.1) 计算级数和 Sum(f_n)
+Complex sum_f = 0.0;
+for (const auto& [n, f_n] : a_coeffs) {
+sum_f += f_n;
+}
+
+// (1.2) 计算 Gamma 函数比值
+Complex g_num = log_gamma(nu1 - s_c + i * eps);
+Complex g_den = log_gamma(nu1 + s_c - i * eps);
+Complex gamma_ratio = std::exp(g_num - g_den);
+
+// (1.3) 计算前置因子
+Complex term1 = std::exp(-PI * eps / 2.0);
+Complex term2 = std::exp(i * PI * (nu1 - s_c) / 2.0);
+Complex term3 = std::pow(2.0, -1.0 + (double)m_s - i * eps);
+
+// 组合结果 A_+
+Complex A_plus = term1 * term2 * term3 * gamma_ratio * sum_f;
+
+
+// -------------------------------------------------------------------------
+// 2. 计算 A_minus (Eq. 158)
+// 对应无穷远处的出射波 (Outgoing wave at infinity, R_-)
+// Formula:
+// A_- = 2^{-1-s+i*eps} * e^{-i*pi*(nu+1+s)/2} * e^{-pi*eps/2}
+//       * Sum( (-1)^n * [(nu+1+s-i*eps)_n / (nu+1-s+i*eps)_n] * f_n )
+// 
+// Note: (a)_n is the Pochhammer symbol: Gamma(a+n)/Gamma(a)
+// -------------------------------------------------------------------------
+
+// (2.1) 准备 Pochhammer 符号的基数
+Complex poch_a = nu1 + s_c - i * eps; // 分子部分的基数 (nu+1+s-i*eps)
+Complex poch_b = nu1 - s_c + i * eps; // 分母部分的基数 (nu+1-s+i*eps)
+
+// 预先计算 Gamma(a) 和 Gamma(b) 的对数值，避免循环中重复计算
+Complex lg_a = log_gamma(poch_a);
+Complex lg_b = log_gamma(poch_b);
+
+// (2.2) 级数求和
+Complex sum_minus = 0.0;
+
+for (const auto& [n, f_n] : a_coeffs) {
+// 计算 (-1)^n
+double sign = (std::abs(n) % 2 == 0) ? 1.0 : -1.0;
+
+// 计算 Pochhammer 比值: (a)_n / (b)_n
+// Ratio = [Gamma(a+n)/Gamma(a)] / [Gamma(b+n)/Gamma(b)]
+//       = exp( lg(a+n) - lg(a) - (lg(b+n) - lg(b)) )
+
+Complex lg_a_n = log_gamma(poch_a + (double)n);
+Complex lg_b_n = log_gamma(poch_b + (double)n);
+
+Complex poch_ratio = std::exp((lg_a_n - lg_a) - (lg_b_n - lg_b));
+
+sum_minus += sign * poch_ratio * f_n;
+}
+
+// (2.3) 计算前置因子
+Complex term1_m = std::pow(2.0, -1.0 - (double)m_s + i * eps);
+Complex term2_m = std::exp(-i * PI * (nu1 + s_c) / 2.0);
+Complex term3_m = std::exp(-PI * eps / 2.0); // 同 A_plus 的 term1
+
+// 组合结果 A_-
+Complex A_minus = term1_m * term2_m * term3_m * sum_minus;
+
+// -------------------------------------------------------------------------
+// 3. 结果存储
+// 这里的命名仅作区分，具体物理含义(Inc/Trans)需结合 K_nu 判定
+// 根据 LRR 描述: R_+ 是 incoming (Eq 155), R_- 是 outgoing (Eq 156)
+// -------------------------------------------------------------------------
+
+amps.R_in_coef_inf_trans = A_plus;  // 对应 A_+ (Incoming part of Coulomb expansion)
+amps.R_in_coef_inf_inc   = A_minus; // 对应 A_- (Outgoing part of Coulomb expansion)
+
+return amps;
+}
+
+// ==========================================================
+// 计算物理散射系数 (B, C) 和 Wronskian
+// 依据: Sasaki & Tagoshi (2003) LRR-2003-6 Eq. 167-170, Eq. 23
+// ==========================================================
+
+// ==========================================================
+// 计算连接视界与无穷远的物理系数 (Physical Amplitudes)
+// 依据: Sasaki & Tagoshi (2003) Eq. 167 - 170
+// ==========================================================
+
+PhysicalAmplitudes TeukolskyRadial::ComputePhysicalAmplitudes(std::complex<double> nu, 
+    const std::map<int, std::complex<double>>& a_coeffs,
+    const AsymptoticAmplitudes& amps_nu) {
+PhysicalAmplitudes phys_amps;
+
+// 1. 准备物理参数
+Complex eps = m_epsilon;
+Complex omega = m_omega;
+Complex kappa = m_kappa;     // sqrt(1-q^2)
+Complex s_c(m_s, 0.0);
+Complex i(0.0, 1.0);
+double PI = M_PI;
+
+// 辅助变量
+Complex eps_plus = (eps + m_tau) / 2.0; // epsilon_+ = (eps + tau)/2
+// 注意：k = omega - m * Omega_H 可能是 Eq 167 中的 k，需确认定义
+// LRR Eq 19: k = omega - m * a / (2Mr_+)
+double r_plus = 1.0 + std::sqrt(1.0 - q * q); // M=1 units
+Complex k_horizon = omega - (double)m_m * q / (2.0 * r_plus); 
+
+// -------------------------------------------------------------------------
+// 2. 准备 K 因子
+// 公式涉及 K_nu 和 K_{-nu-1}
+// -------------------------------------------------------------------------
+Complex K_nu = k_factor(nu);
+Complex K_neg_nu_1 = k_factor(-nu - 1.0); // K_{-nu-1}
+Complex phase_term=i*(eps*log(eps) - (1.0 - kappa)/2.0 * eps);
+// -------------------------------------------------------------------------
+// 3. 计算 B_trans (Eq. 167)
+// 描述 R^in 在视界处的透射行为
+// -------------------------------------------------------------------------
+
+// (3.1) 计算级数求和 Sum(f_n)
+// 注意：这与 A_+ 公式中的求和相同，如果你之前没存，这里需要重算一遍
+Complex sum_f = 0.0;
+for (const auto& [n, f_n] : a_coeffs) {
+sum_f += f_n;
+}
+
+// [填空 1] B_trans 公式
+// 参考 Eq. 167: (eps*kappa/omega)^(2s) * exp(...) * Sum(f_n)
+// 提示: 指数部分包含 ik(epsilon_+) 和 ln(kappa) 相关项
+// Complex term_pre = ...; 
+// phys_amps.B_trans = term_pre * sum_f;
+
+phys_amps.B_trans=std::pow((eps*kappa/omega),(2.0*s_c)) * exp(i*(eps_plus)*kappa*2.0*(0.5 + log(kappa)/(1.0+kappa))) * sum_f;
+// -------------------------------------------------------------------------
+// 4. 计算 B_inc (Eq. 168)
+// 描述 R^in 在无穷远的入射分量 (1/omega * ... * A_+)
+// -------------------------------------------------------------------------
+
+Complex A_plus = amps_nu.R_in_coef_inf_trans; // 注意映射关系: A_+ 对应 Transmitted part of Coulomb solution
+
+// [填空 2] B_inc 公式
+// 参考 Eq. 168: omega^-1 * (K_nu - i * exp(...) * Ratio_Sin * K_-nu-1) * A_+ * Phase
+// 关键点: 
+// 1. sin_ratio = sin(pi*(nu - s + i*eps)) / sin(pi*(nu + s - i*eps))
+// 2. Phase term = exp( -i * (eps*ln(eps) - (1-kappa)/2 * eps) )
+// Complex bracket_term = ...;
+// Complex phase_term = ...;
+// phys_amps.B_inc = (1.0/omega) * bracket_term * A_plus * phase_term;
+
+phys_amps.B_inc=1.0/omega * (K_nu - i * exp(-i*PI*nu)* sin(PI*(nu - s_c + i*eps)) / sin(PI*(nu + s_c - i*eps))  * K_neg_nu_1) * A_plus * exp(-phase_term);
+// -------------------------------------------------------------------------
+// 5. 计算 B_ref (Eq. 169)
+// 描述 R^in 在无穷远的反射分量 (1/omega^(1+2s) * ... * A_-)
+// -------------------------------------------------------------------------
+
+Complex A_minus = amps_nu.R_in_coef_inf_inc; // A_- 对应 Incident part of Coulomb
+
+// [填空 3] B_ref 公式
+// 参考 Eq. 169: omega^(-1-2s) * (K_nu + i * exp(i*pi*nu) * K_-nu-1) * A_- * Phase_Conj
+// 注意: Phase term 与 B_inc 的相位互为复共轭 (符号相反)
+// Complex bracket_ref = ...;
+// Complex phase_ref = ...;
+// phys_amps.B_ref = std::pow(omega, -1.0 - 2.0 * (double)m_s) * bracket_ref * A_minus * phase_ref;
+phys_amps.B_ref= std::pow(omega, -1.0 - 2.0 * s_c) * (K_nu + i * exp(i*PI*nu)  * K_neg_nu_1) * A_minus * exp(phase_term);
+
+// -------------------------------------------------------------------------
+// 6. 计算 C_trans (Eq. 170)
+// 描述 R^up (Upgoing) 辐射到无穷远的系数
+// -------------------------------------------------------------------------
+
+// [填空 4] C_trans 公式
+// 参考 Eq. 170: omega^(-1-2s) * A_- * Phase_Ref
+// 注意: 它与 B_ref 共享很多因子，除了括号里的 K 组合
+// phys_amps.C_trans = std::pow(omega, -1.0 - 2.0 * (double)m_s) * A_minus * phase_ref;
+phys_amps.C_trans=std::pow(omega, -1.0 - 2.0 * s_c) * A_minus * exp(phase_term);
+return phys_amps;
 }
