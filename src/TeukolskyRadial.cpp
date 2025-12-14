@@ -816,14 +816,14 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         double dn = (double)n;
         
         // 3.1 计算组合系数 C_n
-        double sign = (std::abs(n) % 2 == 0) ? 1.0 : -1.0;
+        Complex i_pow_n = std::pow(-i, n);
         
         // Pochhammer ratio using log_gamma
         Complex lg_num_n = log_gamma(poch_num_base + dn);
         Complex lg_den_n = log_gamma(poch_den_base + dn);
         Complex poch_ratio = std::exp((lg_num_n - lg_num_base) - (lg_den_n - lg_den_base));
         
-        Complex C_n = sign * poch_ratio * a_n;
+        Complex C_n = i_pow_n * poch_ratio * a_n;
 
         // 3.2 计算库伦波函数 F_L(eta, z) 及其导数
         // Eq. 142: F_L = e^{-iz} * 2^L * z^{L+1} * [Gamma(...) / Gamma(...)] * 1F1(...)
