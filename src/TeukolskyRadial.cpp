@@ -630,7 +630,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
     Complex P_val=exp(i*eps*kappa*x_val) * pow((-x_val),(alpha)) * pow((1-x_val),(beta));
 
     Complex LogP=i*eps*kappa*x_val+(alpha)*log(-x_val)+(beta)*log(1-x_val);
-    Complex dLogPdx = i*eps*kappa + (alpha)/(-x_val) - (beta)/(1-x_val);
+    Complex dLogPdx = i*eps*kappa - (alpha)/(-x_val) - (beta)/(1-x_val);
 
     
 
@@ -722,6 +722,207 @@ Complex TeukolskyRadial::Hyp2F1(Complex a, Complex b, Complex c, Complex z) {
     acb_clear(acb_a);
     acb_clear(acb_b);
     acb_clear(acb_c);
+    acb_clear(acb_z);
+    acb_clear(acb_res);
+
+    return Complex(res_r, res_i);
+}
+// ==========================================================
+// 计算远场径向函数 R_C^nu(r) (库伦波函数级数)
+// 依据: Sasaki & Tagoshi (2003) Eq. 139, 142, 144
+// ==========================================================
+
+std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
+    double r, 
+    Complex nu, 
+    const std::map<int, Complex>& a_coeffs) 
+{
+    // 1. 准备物理参数
+    Complex s_c=(double)m_s;
+    Complex eps = m_epsilon;   // 2M*omega
+    Complex omega = m_omega;
+    Complex tau = m_tau;
+    double M = 1.0;
+    double kappa = m_kappa;
+    double r_minus = 1.0 - std::sqrt(1.0 - q * q); // r_minus / M
+    
+    Complex i(0.0, 1.0);
+
+    // -------------------------------------------------------------------------
+    // [填空 1] 坐标变换 r -> z_hat
+    // -------------------------------------------------------------------------
+    // 参考 LRR Page 31: z_hat = omega * (r - r_minus)
+    // 这里的 z_hat 是复数还是实数？通常 r 是实数，z_hat 是实数 (如果 omega 是实数)
+    // Complex z_hat = ...;
+    // double dzhat_dr = ...; // d(z_hat)/dr
+    
+    // 注意: omega = m_omega (M*omega). r_minus 是 M 单位.
+    // 所以 z_hat = m_omega * (r - r_minus)
+    Complex z_hat = omega * (r - r_minus);
+    Complex dzhat_dr = omega;
+
+
+
+    // -------------------------------------------------------------------------
+    // [填空 2] 计算 R_C 的前置因子 P_C(z_hat) 及其对数导数
+    // -------------------------------------------------------------------------
+    // 参考 Eq. 139: R_C = z^(-1-s) * (1 - eps*kappa/z)^(-s - i(eps+tau)/2) * f(z)
+    // 令 factor1 = -1 - s
+    // 令 factor2 = -s - i*(eps + tau)/2.0
+    // Term = z_hat^factor1 * (1 - eps*kappa/z_hat)^factor2
+    
+    // 提示: 同样建议先算 LogP 及其导数 dLogP/dz_hat
+    // Complex term_brace = 1.0 - eps * kappa / z_hat;
+    // Complex LogP = ...;
+    // Complex dLogP_dz = ...;
+    
+    Complex factor1 = -1.0 - s_c;
+    Complex factor2 = -s_c - i * (eps + tau) / 2.0;
+    Complex term_brace = 1.0 - eps * kappa / z_hat;
+    
+    Complex LogP = factor1 * std::log(z_hat) + factor2 * std::log(term_brace);
+    
+    // 导数: d/dz (fac1 * ln z + fac2 * ln(1 - C/z))
+    //      = fac1/z + fac2 * (1/(1-C/z)) * (-C * -1/z^2)
+    //      = fac1/z + fac2 * (1/(1-C/z)) * (C/z^2)
+    //      = fac1/z + fac2 * (C / (z*(z-C)))
+    Complex C_const = eps * kappa;
+    Complex dLogP_dz = factor1 / z_hat + factor2 * (C_const / (z_hat * (z_hat - C_const)));
+    
+    Complex P_val = std::exp(LogP);
+
+
+    // -------------------------------------------------------------------------
+    // 3. 计算级数求和 f(z_hat) = Sum(C_n * F_{n+nu})
+    // -------------------------------------------------------------------------
+    // 依据 Eq. 144 和 147
+    // 系数 C_n = (-i)^n * [ (nu+1+s-i*eps)_n / (nu+1-s+i*eps)_n ] * a_n
+    
+    Complex sum_f = 0.0;
+    Complex sum_dfdz = 0.0;
+
+    // 预计算 Pochhammer 比值的基数
+    Complex poch_num_base = nu + 1.0 + s_c - i * eps;
+    Complex poch_den_base = nu + 1.0 - s_c + i * eps;
+    Complex lg_num_base = log_gamma(poch_num_base);
+    Complex lg_den_base = log_gamma(poch_den_base);
+
+    // 库伦函数参数 eta (Eq. 141 limit: eta = -i*s - eps ? 需仔细核对)
+    // Eq. 142 definition F_L(eta, z). Eq 141 usage F_l(-is-eps, z).
+    // 所以 eta_coulomb = -i*s - eps
+    Complex eta_coulomb = -i * s_c - eps;
+
+    for (const auto& [n, a_n] : a_coeffs) {
+        double dn = (double)n;
+        
+        // 3.1 计算组合系数 C_n
+        double sign = (std::abs(n) % 2 == 0) ? 1.0 : -1.0;
+        
+        // Pochhammer ratio using log_gamma
+        Complex lg_num_n = log_gamma(poch_num_base + dn);
+        Complex lg_den_n = log_gamma(poch_den_base + dn);
+        Complex poch_ratio = std::exp((lg_num_n - lg_num_base) - (lg_den_n - lg_den_base));
+        
+        Complex C_n = sign * poch_ratio * a_n;
+
+        // 3.2 计算库伦波函数 F_L(eta, z) 及其导数
+        // Eq. 142: F_L = e^{-iz} * 2^L * z^{L+1} * [Gamma(...) / Gamma(...)] * 1F1(...)
+        Complex L = nu + dn; // L = n + nu
+        
+        // [填空 3] 库伦波函数 F_L 的各个部分
+        // 参数: hyp_a = L + 1 - i*eta, hyp_b = 2L + 2
+        // Complex hyp_a = ...;
+        // Complex hyp_b = ...;
+        
+        // 1F1 值
+        // Complex phi_val = Hyp1F1(hyp_a, hyp_b, 2.0 * i * z_hat);
+        
+        // F_L 值 (Eq 142)
+        // 注意常数因子: term_gamma = Gamma(L+1-i*eta) / Gamma(2L+2)
+        // term_z = e^{-i*z} * (2z)^(L+1) ? 不，是 2^L * z^{L+1}
+        // Complex F_val = ...;
+        
+        Complex hyp_a = L + 1.0 - i * eta_coulomb;
+        Complex hyp_b = 2.0 * L + 2.0;
+        Complex arg_z = 2.0 * i * z_hat;
+        
+        Complex phi_val = Hyp1F1(hyp_a, hyp_b, arg_z);
+        Complex dphi_dz_arg = (hyp_a / hyp_b) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z); // dPhi / d(2iz)
+        
+        // Gamma 因子
+        Complex lg_g1 = log_gamma(L + 1.0 - i * eta_coulomb);
+        Complex lg_g2 = log_gamma(2.0 * L + 2.0);
+        Complex gamma_factor = std::exp(lg_g1 - lg_g2);
+        
+        // 组合 F_L
+        // F_L = e^{-iz} * 2^L * z^{L+1} * gamma_factor * phi
+        // 建议在 log 域组合幂次项
+        Complex log_term_z = -i * z_hat + L * std::log(2.0) + (L + 1.0) * std::log(z_hat);
+        Complex term_z_combined = std::exp(log_term_z);
+        
+        Complex F_val = term_z_combined * gamma_factor * phi_val;
+
+        // 3.3 计算 F_L 对 z_hat 的导数
+        // dF/dz = F * (d(log_term)/dz) + term_z * gamma * (dPhi/d_arg * d_arg/dz)
+        // d(log_term)/dz = -i + (L+1)/z
+        // d_arg/dz = 2i
+        
+        Complex dLogTerm_dz = -i + (L + 1.0) / z_hat;
+        Complex dPhi_dz = dphi_dz_arg * 2.0 * i;
+        
+        Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor) * dPhi_dz;
+
+        // 累加
+        sum_f += C_n * F_val;
+        sum_dfdz += C_n * dFdz_val;
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. 组合最终结果 R_C(r)
+    // -------------------------------------------------------------------------
+    // R = P * f
+    // dR/dz = P' * f + P * f' = P * ( (P'/P)*f + f' )
+    
+    Complex R_C_val = P_val * sum_f;
+    Complex dR_C_dz = P_val * (dLogP_dz * sum_f + sum_dfdz);
+    
+    // 转换回对 r 的导数
+    Complex dR_C_dr = dR_C_dz * dzhat_dr;
+
+    return {R_C_val, dR_C_dr};
+}
+
+// Arb 库 acb_hypgeom_coulomb 包装器
+// ==========================================================
+// Arb 包装器：计算合流超几何函数 1F1(a; b; z)
+// ==========================================================
+Complex TeukolskyRadial::Hyp1F1(Complex a, Complex b, Complex z) {
+    // 1. 初始化 Arb 变量
+    acb_t acb_a, acb_b, acb_z, acb_res;
+    acb_init(acb_a);
+    acb_init(acb_b);
+    acb_init(acb_z);
+    acb_init(acb_res);
+
+    // 2. 设置精度 (128 bits 以保证中间过程稳定性)
+    slong prec = 128;
+
+    // 3. 赋值
+    acb_set_d_d(acb_a, a.real(), a.imag());
+    acb_set_d_d(acb_b, b.real(), b.imag());
+    acb_set_d_d(acb_z, z.real(), z.imag());
+
+    // 4. 计算 1F1 (regularized=0)
+    // acb_hypgeom_1f1(res, a, b, z, regularized, prec)
+    acb_hypgeom_1f1(acb_res, acb_a, acb_b, acb_z, 0, prec);
+
+    // 5. 转换回 Complex
+    double res_r = arf_get_d(arb_midref(acb_realref(acb_res)), ARF_RND_NEAR);
+    double res_i = arf_get_d(arb_midref(acb_imagref(acb_res)), ARF_RND_NEAR);
+
+    // 6. 清理
+    acb_clear(acb_a);
+    acb_clear(acb_b);
     acb_clear(acb_z);
     acb_clear(acb_res);
 

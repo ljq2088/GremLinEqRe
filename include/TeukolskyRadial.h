@@ -85,9 +85,7 @@ struct PhysicalAmplitudes {
       const AsymptoticAmplitudes& amp_minus_nu,  // -nu-1 分支的 A+, A-
       std::complex<double> K_minus_nu            // -nu-1 分支的 K因子
    );
-   // 辅助函数：计算高斯超几何函数 2F1(a,b;c;z) 及其导数
-   std::complex<double> Hyp2F1(std::complex<double> a, std::complex<double> b, 
-   std::complex<double> c, std::complex<double> z);
+
      /**
       * @brief 计算连分式的值
       * 用于求解重整化角动量 nu 的超越方程
@@ -109,6 +107,21 @@ struct PhysicalAmplitudes {
    std::complex<double> nu, 
    const std::map<int, std::complex<double>>& a_coeffs
 );
+   // 辅助函数：计算高斯超几何函数 2F1(a,b;c;z) 及其导数
+   std::complex<double> Hyp2F1(std::complex<double> a, std::complex<double> b, 
+      std::complex<double> c, std::complex<double> z);
+   // 计算远场径向函数 R_C^nu(r) 及其导数
+   // 适用范围: 远场区域 (r 较大)
+   // 返回值: pair.first = R_C(r), pair.second = dR_C/dr
+   std::pair<std::complex<double>, std::complex<double>> Evaluate_Coulomb(
+   double r, 
+   std::complex<double> nu, 
+   const std::map<int, std::complex<double>>& a_coeffs
+);
+
+   // 辅助函数：计算合流超几何函数 1F1(a;b;z)
+   // 对应 LRR Eq. 142 中的 Phi 或 M 函数
+   std::complex<double> Hyp1F1(std::complex<double> a, std::complex<double> b, std::complex<double> z);
  private:
    Real m_M;
    Real m_a;
@@ -127,7 +140,6 @@ struct PhysicalAmplitudes {
    Complex m_tau_sq;
    // ===存储特征值 nu ===
    Complex m_nu;
-
 
     
     
