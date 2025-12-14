@@ -35,7 +35,7 @@ def test_matching():
 
     # 3. 求解重整化角动量 nu
     # 初始猜测 nu ~ l
-    nu_guess = complex(float(l), 0.0)
+    nu_guess = complex(float(l)+ 0.01, 0.01)
     nu = tr.solve_nu(nu_guess)
     print(f"Solved nu: {nu:.6f}")
 
