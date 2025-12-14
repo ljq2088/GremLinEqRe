@@ -122,6 +122,17 @@ struct PhysicalAmplitudes {
    // 辅助函数：计算合流超几何函数 1F1(a;b;z)
    // 对应 LRR Eq. 142 中的 Phi 或 M 函数
    std::complex<double> Hyp1F1(std::complex<double> a, std::complex<double> b, std::complex<double> z);
+   // 全域径向函数求值器
+   // 自动在近场和远场算法间切换
+   std::pair<Complex, Complex> Evaluate_R_in(
+      double r,
+      Complex nu,
+      Complex K_nu,       // 预先算好的 K_nu
+      Complex K_neg_nu,   // 预先算好的 K_{-nu-1}
+      const std::map<int, Complex>& a_coeffs_pos, // nu 的系数
+      const std::map<int, Complex>& a_coeffs_neg, // -nu-1 的系数
+      double r_match = 5.0 // 拼接半径，默认 5M (可视情况调整)
+  );
  private:
    Real m_M;
    Real m_a;

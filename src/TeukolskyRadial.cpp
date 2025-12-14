@@ -928,3 +928,45 @@ Complex TeukolskyRadial::Hyp1F1(Complex a, Complex b, Complex z) {
 
     return Complex(res_r, res_i);
 }
+// ==========================================================
+// 全域径向函数求值 (Global Radial Function Evaluation)
+// 自动切换近场 (Hypergeometric) 和远场 (Coulomb) 算法
+// ==========================================================
+std::pair<Complex, Complex> TeukolskyRadial::Evaluate_R_in(
+    double r,
+    Complex nu,
+    Complex K_nu,
+    Complex K_neg_nu,
+    const std::map<int, Complex>& a_coeffs_pos,
+    const std::map<int, Complex>& a_coeffs_neg,
+    double r_match)
+{
+    // 1. 近场区域：直接使用超几何级数
+    // 对应 LRR Eq. 116 + 120
+    if (r <= r_match) {
+        return Evaluate_Hypergeometric(r, nu, a_coeffs_pos);
+    }
+    
+    // 2. 远场区域：使用 Coulomb 级数的线性组合
+    // 对应 LRR Eq. 166: R^in = K_v * R_C^v + K_-v-1 * R_C^-v-1
+    else {
+        // 计算第一部分: K_nu * R_C^nu
+        // 注意 Evaluate_Coulomb 返回的是 {Value, Deriv}
+        auto res_pos = Evaluate_Coulomb(r, nu, a_coeffs_pos);
+        Complex val_pos = res_pos.first;
+        Complex der_pos = res_pos.second;
+        
+        // 计算第二部分: K_-nu-1 * R_C^-nu-1
+        // 注意传入的 nu 应该是 -nu - 1.0
+        Complex nu_neg = -nu - 1.0;
+        auto res_neg = Evaluate_Coulomb(r, nu_neg, a_coeffs_neg);
+        Complex val_neg = res_neg.first;
+        Complex der_neg = res_neg.second;
+        
+        // 线性组合
+        Complex R_total = K_nu * val_pos + K_neg_nu * val_neg;
+        Complex dR_total = K_nu * der_pos + K_neg_nu * der_neg;
+        
+        return {R_total, dR_total};
+    }
+}

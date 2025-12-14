@@ -44,7 +44,6 @@ pybind11_add_module(_core
 )
 target_link_libraries(_core PRIVATE
     ${ARB_LIB}
-    ${ACB_LIB}
     ${FLINT_LIB}
     ${MPFR_LIB}
     ${GMP_LIB}

@@ -47,7 +47,8 @@ PYBIND11_MODULE(_core, m) {
           .def("solve_nu", &TeukolskyRadial::solve_nu, 
                py::arg("nu_guess"), 
                "求解特征值 nu，使 g(nu)=0")
-               
+          .def("k_factor", &TeukolskyRadial::k_factor, 
+                    py::arg("nu"), "计算连接因子 K_nu")     
           .def("calc_g", &TeukolskyRadial::calc_g, 
                py::arg("nu"), 
                "计算超越方程残差 g(nu)")
@@ -64,8 +65,17 @@ PYBIND11_MODULE(_core, m) {
                          
           .def("hyp1f1", &TeukolskyRadial::Hyp1F1,
                          py::arg("a"), py::arg("b"), py::arg("z"),
-                         "Wrapper for 1F1 confluent hypergeometric function");
-          
+                         "Wrapper for 1F1 confluent hypergeometric function")
+          .def("Evaluate_R_in", &TeukolskyRadial::Evaluate_R_in,
+               py::arg("r"), 
+               py::arg("nu"), 
+               py::arg("K_nu"), 
+               py::arg("K_neg_nu"), 
+               py::arg("a_coeffs_pos"), 
+               py::arg("a_coeffs_neg"),
+               py::arg("r_match") = 5.0,
+               "计算全域径向函数 R^in(r) 及其导数 (自动拼接)");
+
      py::class_<SWSH>(m, "SWSH")
           .def(py::init<int, int, int, double>(),
                     py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))
