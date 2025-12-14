@@ -73,7 +73,21 @@ struct PhysicalAmplitudes {
    Complex coeff_alpha(Complex nu, int n) const;
    Complex coeff_beta(Complex nu, int n) const;
    Complex coeff_gamma(Complex nu, int n) const;
- 
+   // 计算 K_nu 因子 (包含无穷级数求和)
+   Complex k_factor(Complex nu) const;
+   // 输入: nu, 以及之前算好的级数系数 map a_coeffs
+   AsymptoticAmplitudes ComputeAmplitudes(std::complex<double> nu, 
+      const std::map<int, std::complex<double>>& a_coeffs);
+   PhysicalAmplitudes ComputePhysicalAmplitudes(
+      std::complex<double> nu,
+      const AsymptoticAmplitudes& amp_nu,        // nu 分支的 A+, A-
+      std::complex<double> K_nu,                 // nu 分支的 K因子
+      const AsymptoticAmplitudes& amp_minus_nu,  // -nu-1 分支的 A+, A-
+      std::complex<double> K_minus_nu            // -nu-1 分支的 K因子
+   );
+   // 辅助函数：计算高斯超几何函数 2F1(a,b;c;z) 及其导数
+   std::complex<double> Hyp2F1(std::complex<double> a, std::complex<double> b, 
+   std::complex<double> c, std::complex<double> z);
      /**
       * @brief 计算连分式的值
       * 用于求解重整化角动量 nu 的超越方程
@@ -86,121 +100,39 @@ struct PhysicalAmplitudes {
    PhysicalAmplitudes ComputePhysicalAmplitudes(std::complex<double> nu, 
       const std::map<int, std::complex<double>>& a_coeffs,
       const AsymptoticAmplitudes& amps_nu);
+
+   // 计算径向函数 R_in(r) 及其导数 dR_in/dr
+   // 适用范围: 近视界区域 (r 接近 r_+)
+   // 返回值: pair.first = R(r), pair.second = dR/dr
+   std::pair<std::complex<double>, std::complex<double>> Evaluate_Hypergeometric(
+   double r, 
+   std::complex<double> nu, 
+   const std::map<int, std::complex<double>>& a_coeffs
+);
  private:
-     Real m_M;
-     Real m_a;
-     Real m_omega;
-     int m_s;
-     int m_l;
-     int m_m;
-     Real m_lambda;
- 
-     // 常用中间变量，预计算以提高效率
-     Real m_epsilon;   // 2 * omega
-     Real m_kappa;     // sqrt(1 - q^2)
-     Real q;
-     Real m_tau;       // (epsilon - m*q) / kappa
-     Complex m_epsilon_sq;
-     Complex m_tau_sq;
-    // ===存储特征值 nu ===
-    Complex m_nu;
+   Real m_M;
+   Real m_a;
+   Real m_omega;
+   int m_s;
+   int m_l;
+   int m_m;
+   Real m_lambda;
+
+   // 常用中间变量，预计算以提高效率
+   Real m_epsilon;   // 2 * omega
+   Real m_kappa;     // sqrt(1 - q^2)
+   Real q;
+   Real m_tau;       // (epsilon - m*q) / kappa
+   Complex m_epsilon_sq;
+   Complex m_tau_sq;
+   // ===存储特征值 nu ===
+   Complex m_nu;
 
 
     
     
-    // 计算 K_nu 因子 (包含无穷级数求和)
-    Complex k_factor(Complex nu) const;
-    // 输入: nu, 以及之前算好的级数系数 map a_coeffs
-    AsymptoticAmplitudes ComputeAmplitudes(std::complex<double> nu, 
-      const std::map<int, std::complex<double>>& a_coeffs);
-   PhysicalAmplitudes ComputePhysicalAmplitudes(
-      std::complex<double> nu,
-      const AsymptoticAmplitudes& amp_nu,        // nu 分支的 A+, A-
-      std::complex<double> K_nu,                 // nu 分支的 K因子
-      const AsymptoticAmplitudes& amp_minus_nu,  // -nu-1 分支的 A+, A-
-      std::complex<double> K_minus_nu            // -nu-1 分支的 K因子
-   );
-
+   
  };
  
  #endif // TEUKOLSKY_RADIAL_H
 
-// 辅助常数定义，方便后续公式书写
-// 建议在类中定义或作为局部常量
-// const Complex I = 1.0i;
-
-AsymptoticAmplitudes TeukolskyRadial::ComputeAmplitudes(std::complex<double> nu, 
-   const std::map<int, std::complex<double>>& a_coeffs) {
-AsymptoticAmplitudes amps;
-
-// 准备物理参数
-Complex omega = m_omega; // 注意区分 m_omega 和 epsilon
-Complex epsilon = m_epsilon;
-Complex kappa = m_kappa;
-Complex tau = m_tau; // (epsilon - m*q)/kappa
-
-// 计算 K_nu 因子 (Eq. 4.25)
-// 你之前已经实现了 k_factor(nu)，这里直接调用
-Complex K_nu = k_factor(nu);
-
-// -------------------------------------------------------------------------
-// 第一步：计算无穷级数求和 S_nu
-// 对应 Sasaki & Tagoshi Eq. 4.34 中定义的级数部分
-// S_nu = Sum_{n} (-1)^n * a_n * (n + nu + 1 + s + i*epsilon) ... / (n + nu + 1 - i*tau) ...
-// 注意：这里的公式极其繁琐，请务必对着论文仔细核对分子分母
-// -------------------------------------------------------------------------
-Complex sum_series = 0.0;
-
-// 遍历所有已计算的系数 a_n (包括负数索引)
-for (auto const& [n, a_n_val] : a_coeffs) {
-double dn = (double)n;
-Complex term = 0.0;
-
-// [填空 1] 请输入级数求和项的公式
-// 参考 LRR-2003-6 Eq. 4.34 (或其他定义 A+ A- 的公式)
-// 提示：通常涉及 Gamma 函数比值或直接的多项式因子
-// Sasaki Tagoshi 的 Eq 4.30-4.33 展开中，系数 explicit form 比较复杂
-// 有时使用 Eq. 4.19 的 a_n 定义代入 Eq. 4.34
-
-// 伪代码示例 (请替换为真实公式):
-// Complex numer = (dn + nu + 1.0 + m_s + 1.0i * epsilon); // ... 更多项
-// Complex denom = (dn + nu + 1.0 - 1.0i * tau);            // ... 更多项
-// term = std::pow(-1.0, dn) * a_n_val * (numer / denom);
-
-sum_series += term;
-}
-
-// -------------------------------------------------------------------------
-// 第二步：计算 A+ 和 A- (或 C_trans, C_inc) 的前置因子
-// 对应 Eq. 4.32 和 4.33 (以及 4.30 的系数)
-// 这些系数包含 Gamma 函数、2^(...)、epsilon^(...) 等
-// -------------------------------------------------------------------------
-
-Complex A_plus = 0.0; 
-Complex A_minus = 0.0;
-
-// [填空 2] 计算 A_minus (对应入射波系数系数，通常相关联于 r^{-1} e^{-i wr})
-// 参考 LRR Eq. 4.32 (C^{trans} in their notation for R^in? Need check definition)
-// 注意：Sasaki & Tagoshi 定义 R^in ~ A^- r^{-1} e^{-iwr} + A^+ r^{-2s-1} e^{+iwr} (Eq 4.30)
-// 公式包含: 2^{-s-i*epsilon} * exp(...) * Gamma(...) * K_nu 等
-// A_minus = ...
-
-// [填空 3] 计算 A_plus (对应反射/透射波系数)
-// 参考 LRR Eq. 4.33
-// 注意：A_plus 和 A_minus 之间通常有一个简单的对称关系或通过 K_nu 联系
-// A_plus = ...
-
-
-// -------------------------------------------------------------------------
-// 第三步：组装最终结果
-// 根据 Eq. 4.30 将 A+, A- 映射到代码的输出结构
-// -------------------------------------------------------------------------
-
-// 通常定义：
-// R_in_inf ~ Z_in * (exp(-iwr)/r) + Z_refl * (exp(iwr)/r^{2s+1})
-
-amps.R_in_coef_inf_inc = A_minus;   // 需确认 A- 是否对应入射项
-amps.R_in_coef_inf_trans = A_plus;  // 需确认 A+ 是否对应外行项
-
-return amps;
-}

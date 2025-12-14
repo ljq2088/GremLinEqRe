@@ -19,7 +19,12 @@
 #include "TeukolskyRadial.h"
 #include <iostream>
 #include <limits>
+#include <stdio.h>
 
+#include <acb_hypgeom.h>
+#include <acb.h>
+#include <arb.h>
+#include <arf.h>
 using namespace std::complex_literals; // 允许使用 1.0i
 
 // ==========================================================
@@ -580,4 +585,145 @@ phys_amps.B_ref= std::pow(omega, -1.0 - 2.0 * s_c) * (K_nu + i * exp(i*PI*nu)  *
 // phys_amps.C_trans = std::pow(omega, -1.0 - 2.0 * (double)m_s) * A_minus * phase_ref;
 phys_amps.C_trans=std::pow(omega, -1.0 - 2.0 * s_c) * A_minus * exp(phase_term);
 return phys_amps;
+}
+// ==========================================================
+// 计算径向函数 R_in(r) (超几何级数展开)
+// 依据: Sasaki & Tagoshi (2003) Eq. 114 - 117
+// ==========================================================
+
+std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
+    double r, 
+    Complex nu, 
+    const std::map<int, Complex>& a_coeffs) 
+{
+    // 1. 准备物理参数
+    Real s_c = m_s;
+    Complex eps = m_epsilon;
+    Complex omega = m_omega;
+    double kappa = m_kappa;
+    Complex tau = m_tau;
+    double M = 1.0; // 几何单位制
+    double r_plus = 1.0 + std::sqrt(1.0 - q * q);
+    
+    Complex i(0.0, 1.0);
+
+    // -------------------------------------------------------------------------
+    // [填空 1] 坐标变换 r -> x
+    // -------------------------------------------------------------------------
+    // 参考 Eq. 114: x = (omega*r_plus - omega*r) / (epsilon * kappa)
+    // 注意: epsilon = 2*M*omega. 
+    // 这里 x 通常是一个负实数 (当 r > r_+)
+    double x_val=(r_plus - r) / (2.0 * kappa);
+    // Complex x_val = ...;
+    // 提示: x_val = (r_plus - r) / (2.0 * M * kappa); // 化简后的形式，请验证
+    // 对应的 dx/dr = ... (链式法则需要)
+    // Complex dxdR = ...;
+    double dx_dr=-1.0 / (2.0 * kappa);
+
+    // -------------------------------------------------------------------------
+    // [填空 2] 计算前置因子 P(x) 及其关于 x 的对数导数
+    // -------------------------------------------------------------------------
+    // 参考 Eq. 116: R = P(x) * p_in(x)
+
+    Complex alpha = -s_c - i * (eps + tau) / 2.0; 
+    Complex beta  = i * (eps - tau) / 2.0;
+    Complex P_val=exp(i*eps*kappa*x_val) * pow((-x_val),(alpha)) * pow((1-x_val),(beta));
+
+    Complex LogP=i*eps*kappa*x_val+(alpha)*log(-x_val)+(beta)*log(1-x_val);
+    Complex dLogPdx = i*eps*kappa + (alpha)/(-x_val) - (beta)/(1-x_val);
+
+    
+
+
+
+    // -------------------------------------------------------------------------
+    // 3. 计算级数求和 S(x) = Sum(a_n * F_n(x)) 及其导数
+    // -------------------------------------------------------------------------
+    Complex sum_S = 0.0;      // S(x)
+    Complex sum_dSdx = 0.0;   // dS/dx
+    
+    // 超几何函数的参数 c (Eq. 120: c = 1 - s - i*eps - i*tau)
+    
+
+    for (const auto& [n, a_n] : a_coeffs) {
+        double dn = (double)n;
+        Complex hyp_a = dn + nu + 1.0 - i * tau;
+        Complex hyp_b = -dn-nu - i * tau;
+        Complex hyp_c = 1.0 - s_c - i * eps - i * tau;
+        // [填空 3] 超几何函数参数 a, b
+        // 参考 Eq. 120: F(a, b; c; x)
+        // a = n + nu + 1 - i*tau
+        // b = -n - nu - i*tau
+        // Complex hyp_a = ...;
+        // Complex hyp_b = ...;
+        
+        // 计算 F(a,b;c;x)
+        // 注意: 这里假设你有一个 Hyp2F1 实现或暂时用占位符
+        // 如果没有库，可以用简单的泰勒级数展开(仅当 |x| 很小时有效)，或者调用外部库
+        Complex F_val = Hyp2F1(hyp_a, hyp_b, hyp_c, x_val);
+        
+        // 计算 dF/dx
+        // 公式: d/dx 2F1(a,b;c;x) = (a*b/c) * 2F1(a+1, b+1; c+1; x) 
+        Complex dFdx_val = (hyp_a * hyp_b / hyp_c) * Hyp2F1(hyp_a + 1.0, hyp_b + 1.0, hyp_c + 1.0, x_val);
+        
+        sum_S += a_n * F_val;
+        sum_dSdx += a_n * dFdx_val;
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. 组合最终结果
+    // -------------------------------------------------------------------------
+    // R(r) = P(x) * S(x)
+    Complex R_val = P_val * sum_S;
+    
+    // dR/dx = P'(x)S(x) + P(x)S'(x) = P(x) * [ (P'/P)*S + S' ]
+    Complex dRdx_val = P_val * (dLogPdx* sum_S + sum_dSdx);
+    
+    // 转换回对 r 的导数: dR/dr = dR/dx * dx/dr
+    Complex dRdr_val = dRdx_val * dx_dr;
+
+    return {R_val, dRdr_val};
+}
+
+// 简单的超几何函数占位符 (如果还没有 GSL 或其他库绑定)
+// 注意：实际运行时需要替换为真实的数值实现 (如 GSL 的 gsl_sf_hyperg_2F1_complex)
+Complex TeukolskyRadial::Hyp2F1(Complex a, Complex b, Complex c, Complex z) {
+    // 1. 初始化 Arb 复数变量
+    acb_t acb_a, acb_b, acb_c, acb_z, acb_res;
+    acb_init(acb_a);
+    acb_init(acb_b);
+    acb_init(acb_c);
+    acb_init(acb_z);
+    acb_init(acb_res);
+
+    // 2. 设置精度 (Precision)
+    // 即使输入是 double，内部使用更高精度 (如 128 bits) 可以保证结果的 double 值是准确的
+    slong prec = 128; 
+
+    // 3. 将 std::complex 转为 acb_t
+    // Arb 使用 acb_set_d_d(target, real, imag)
+    acb_set_d_d(acb_a, a.real(), a.imag());
+    acb_set_d_d(acb_b, b.real(), b.imag());
+    acb_set_d_d(acb_c, c.real(), c.imag());
+    acb_set_d_d(acb_z, z.real(), z.imag());
+
+    // 4. 调用 Arb 的超几何函数
+    // acb_hypgeom_2f1(res, a, b, c, z, regularization, prec)
+    // regularization=0 表示计算标准的 2F1
+    acb_hypgeom_2f1(acb_res, acb_a, acb_b, acb_c, acb_z, 0, prec);
+
+    // 5. 将结果转回 std::complex<double>
+    // arf_get_d 转换 Arb 浮点数 (arf) 到 double
+    // acb_realref 获取实部引用，acb_imagref 获取虚部引用
+    double res_r = arf_get_d(arb_midref(acb_realref(acb_res)), ARF_RND_NEAR);
+    double res_i = arf_get_d(arb_midref(acb_imagref(acb_res)), ARF_RND_NEAR);
+
+    // 6. 清理内存
+    acb_clear(acb_a);
+    acb_clear(acb_b);
+    acb_clear(acb_c);
+    acb_clear(acb_z);
+    acb_clear(acb_res);
+
+    return Complex(res_r, res_i);
 }

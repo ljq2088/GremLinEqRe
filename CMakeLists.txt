@@ -7,6 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 1. 自动寻找 Python 环境
 set(Python_EXECUTABLE "/home/ljq/miniconda3/envs/few_env_2025/bin/python")
+find_library(GMP_LIB NAMES gmp)
+find_library(MPFR_LIB NAMES mpfr)
+find_library(FLINT_LIB NAMES flint)
+find_library(ARB_LIB arb)
+find_library(ACB_LIB acb)
+
 
 
 
@@ -36,7 +42,13 @@ pybind11_add_module(_core
     src/Clebsch.cpp  
     src/SWSH.cpp      
 )
-
+target_link_libraries(_core PRIVATE
+    ${ARB_LIB}
+    ${FLINT_LIB}
+    ${MPFR_LIB}
+    ${GMP_LIB}
+    m # 数学库
+)
 # 5. 设置输出目录，方便测试脚本直接引用
 # 将编译好的库直接放在项目根目录下的 GremLinEqRe 文件夹里，模拟 Python 包结构
 set_target_properties(_core PROPERTIES 

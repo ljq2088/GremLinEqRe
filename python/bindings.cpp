@@ -30,10 +30,10 @@ PYBIND11_MODULE(_core, m) {
         .def("diff_potential_r", &KerrGeo::diff_potential_r, "径向势一阶导 dR/dr")
         .def("diff2_potential_r", &KerrGeo::diff2_potential_r, "径向势二阶导 d2R/dr2")
         .def("potential_theta", &KerrGeo::potential_theta, "角向势 Theta(cos_theta)");
-    py::class_<TeukolskyRadial>(m, "TeukolskyRadial")
-        .def(py::init<double, double, int, int, int, double>(),
-             py::arg("a"), py::arg("omega"), py::arg("s"), 
-             py::arg("l"), py::arg("m"), py::arg("lambda"))
+     py::class_<TeukolskyRadial>(m, "TeukolskyRadial")
+        .def(py::init<Real, Real, Real, int, int, int, Real>(), 
+             py::arg("M"), py::arg("a_spin"), py::arg("omega"), 
+             py::arg("s"), py::arg("l"), py::arg("m"), py::arg("lambda"))
         
         .def("continued_fraction", &TeukolskyRadial::continued_fraction,
              py::arg("nu"), py::arg("direction"),
@@ -52,10 +52,11 @@ PYBIND11_MODULE(_core, m) {
             py::arg("nu"), 
             "计算超越方程残差 g(nu)")
         .def("ComputeSeriesCoefficients", &TeukolskyRadial::ComputeSeriesCoefficients)
+        .def("hyp2f1", &TeukolskyRadial::Hyp2F1, 
+          "Calculate Gaussian Hypergeometric function 2F1(a, b; c; z) using Arb library.",
+          py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"));
         
-        .def_property_readonly("B_inc", &TeukolskyRadial::get_B_inc)
-        .def_property_readonly("B_trans", &TeukolskyRadial::get_B_trans)
-        .def_property_readonly("C_trans", &TeukolskyRadial::get_C_trans);
+
         
     py::class_<SWSH>(m, "SWSH")
         .def(py::init<int, int, int, double>(),
