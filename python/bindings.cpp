@@ -3,6 +3,7 @@
 #include "KerrGeo.h"
 #include "TeukolskyRadial.h"
 #include "SWSH.h"
+#include "TeukolskySource.h"
 namespace py = pybind11;
 
 PYBIND11_MODULE(_core, m) {
@@ -67,6 +68,9 @@ PYBIND11_MODULE(_core, m) {
           .def("hyp1f1", &TeukolskyRadial::Hyp1F1,
                          py::arg("a"), py::arg("b"), py::arg("z"),py::arg("regularized")=false,
                          "Wrapper for 1F1 confluent hypergeometric function")
+          .def("evaluate_ddR", &TeukolskyRadial::evaluate_ddR,
+               py::arg("r"), py::arg("R"), py::arg("dR"),
+               "利用径向方程精确计算 d2R/dr2")
           .def("Evaluate_R_in", &TeukolskyRadial::Evaluate_R_in,
                py::arg("r"), 
                py::arg("nu"), 
@@ -85,4 +89,28 @@ PYBIND11_MODULE(_core, m) {
           .def("evaluate_S", &SWSH::evaluate_S)
           .def("evaluate_L2dag_S", &SWSH::evaluate_L2dag_S)
           .def("evaluate_L1dag_L2dag_S", &SWSH::evaluate_L1dag_L2dag_S);
+
+
+
+          
+     // 1. 绑定源项投影系数结构体
+     py::class_<SourceProjections>(m, "SourceProjections")
+          .def_readwrite("A_nn0", &SourceProjections::A_nn0)
+          .def_readwrite("A_mbarn0", &SourceProjections::A_mbarn0)
+          .def_readwrite("A_mbarn1", &SourceProjections::A_mbarn1)
+          .def_readwrite("A_mbarmbar0", &SourceProjections::A_mbarmbar0)
+          .def_readwrite("A_mbarmbar1", &SourceProjections::A_mbarmbar1)
+          .def_readwrite("A_mbarmbar2", &SourceProjections::A_mbarmbar2)
+          .def("__repr__", [](const SourceProjections &p) {
+               return "<SourceProjections A_nn0=...>";
+          });
+
+     // 2. 绑定 TeukolskySource 类
+     py::class_<TeukolskySource>(m, "TeukolskySource")
+          .def(py::init<Real, Real, int, int, int>(),
+               py::arg("a"), py::arg("omega"), py::arg("s"), py::arg("l"), py::arg("m"),
+               "构造函数: TeukolskySource(a, omega, s,l,m)")
+          .def("ComputeProjections", &TeukolskySource::ComputeProjections,
+               py::arg("geo_state"), py::arg("geo_obj"), py::arg("swsh"),
+               "计算源项投影系数 (输入: KerrGeo.State, KerrGeo, SWSH)");
 }

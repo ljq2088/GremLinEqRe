@@ -3,9 +3,9 @@
 #include <complex>
 #include <vector>
 #include "KerrGeo.h"
-
+#include "SWSH.h" 
 using Complex = std::complex<double>;
-
+class SWSH; 
 // 源项投影系数结构体
 // 对应径向方程源项 T_lmomega 的展开系数
 // T = A_nn0 * delta 
@@ -27,16 +27,21 @@ struct SourceProjections {
 
 class TeukolskySource {
 public:
-    TeukolskySource(double a);
-
+    // 构造函数
+    
+    TeukolskySource(Real a_spin, Real omega, int s, int l, int m) ;
     /**
      * @brief 计算粒子在当前位置的源项投影系数
      * @param geo_state 粒子状态 (t, r, theta, phi, ut, ur, uth, uphi)
      * @param geo_obj 几何对象 (提供守恒量 E, Lz)
      * @return SourceProjections
      */
-    SourceProjections ComputeProjections(const KerrGeo::State& geo_state, const KerrGeo& geo_obj);
+    SourceProjections ComputeProjections(const KerrGeo::State& st, const KerrGeo& geo_obj,SWSH& swsh);
 
 private:
-    double m_a;
+    Real m_a;
+    double m_omega;
+    int m_s;
+    int m_l;
+    int m_m;
 };

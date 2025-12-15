@@ -133,6 +133,12 @@ struct PhysicalAmplitudes {
       const std::map<int, Complex>& a_coeffs_neg, // -nu-1 的系数
       double r_match = 5.0 // 拼接半径，默认 5M (可视情况调整)
   );
+   /**
+    * @brief 利用径向方程计算 R''(r)
+    * 方程: Delta^{-s} d/dr (Delta^{s+1} dR/dr) + V R = 0
+    * 展开: Delta R'' + 2(s+1)(r-M) R' + (V_pot) R = 0
+    */
+   Complex evaluate_ddR(double r, Complex R, Complex dR) const;
  private:
    Real m_M;
    Real m_a;

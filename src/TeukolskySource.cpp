@@ -1,129 +1,240 @@
 #include "TeukolskySource.h"
+#include "SWSH.h"  // 必须包含，用于调用 evaluate_S 等
 #include <cmath>
-
-TeukolskySource::TeukolskySource(double a) : m_a(a) {}
-
-SourceProjections TeukolskySource::ComputeProjections(const KerrGeo::State& st, const KerrGeo& geo_obj) {
+#include <complex>
+using Complex = std::complex<double>;
+using namespace std::complex_literals; // 允许使用 1.0i
+TeukolskySource::TeukolskySource(Real a_spin, Real omega, int s, int l, int m) : m_a(a_spin), m_omega(omega),m_s(s), m_l(l), m_m(m) {
+    double a_omega=m_a * m_omega;
+}
+inline Complex get_Vs(int s, int m, double a_omega, double sin_th, double cos_th) {
+    if (std::abs(sin_th) < 1e-10) sin_th = 1e-10; // 极轴保护
+    double cot_th = cos_th / sin_th;
+    return -(double)m / sin_th + a_omega * sin_th + (double)s * cot_th;
+}
+SourceProjections TeukolskySource::ComputeProjections(
+    const KerrGeo::State& st, 
+    const KerrGeo& geo_obj,
+    SWSH& swsh) 
+{
     SourceProjections proj;
 
-    // 1. 提取坐标和物理量
-    // x[1]=r, x[2]=theta
+    // ==========================================================
+    // 1. 提取物理量与坐标
+    // ==========================================================
+    // 坐标: Boyer-Lindquist (t, r, theta, phi)
     double r = st.x[1];
-    double th = st.x[2];
+    double theta = st.x[2];
     
-    // 提取四速度分量 (Boyer-Lindquist components)
-    // u[1]=u^r, u[2]=u^theta
-    double ut= st.u[0];
-    double ur = st.u[1];
-    double uth = st.u[2];
-    double uphi = st.u[3];
-    // 提取守恒量
-    double E = geo_obj.energy();
-    double Lz = geo_obj.angular_momentum();
-    // Carter constant Q 实际上隐含在 uth 和 ur 中，此处不需要显式用到 Q，除非用于校验
+    // 四速度: u^t, u^r, u^theta, u^phi (注意：这是对固有时的导数 d/d_tau)
+    double ut = st.u[0];   // dt/d_tau
+    double ur = st.u[1];   // dr/d_tau
+    double uth = st.u[2];  // d_theta/d_tau
+    // double uphi = st.u[3]; // unused directly in C coeffs if Lz is used
 
-    // 几何辅助量
-    double Sigma = r*r + m_a*m_a * std::cos(th)*std::cos(th);
-    // double Delta = r*r - 2.0*r + m_a*m_a; // M=1 units
-    double sin_th = std::sin(th);
-    double cos_th = std::cos(th);
-    
-    Complex i(0.0, 1.0);
+    // 守恒量 (Particle Constants)
+    double E_part = geo_obj.energy();
+    double Lz_part = geo_obj.angular_momentum();
+    // Carter constant Q 用于校验，计算中主要使用 E 和 Lz
 
-    // 2. 计算中间变量 rho
-    // Def: rho = -1 / (r - i * a * cos(theta))
-    // 注意: LRR Eq 2.6 定义 Kinnersley tetrad 时用到的系数
-    Complex rho = 1.0 / (r - i * m_a * cos_th);
-    Complex rho_bar = 1.0 / (r + i * m_a * cos_th); // Complex conjugate
-    // 注意：rho^-1 = -(r - i a cos)
+    // 参数
+    double M = 1.0;
+    double a = m_a;
+    double omega = m_omega;
+    int m = m_m;
+    double a_omega = a * omega;
 
-    // 3. 计算 Tetrad 与 四速度 u 的内积 (Projections)
-    // 我们不需要计算完整的度规缩并，利用守恒量 P = E(r^2+a^2) - a Lz 可以极大简化
+    // ==========================================================
+    // 2. 计算几何辅助量
+    // ==========================================================
+    double sin_th = std::sin(theta);
+    double cos_th = std::cos(theta);
+    double sin2 = sin_th * sin_th;
+    double Sigma = r*r + a*a * cos_th*cos_th;
+    double Delta = r*r - 2.0*M*r + a*a;
     
-    // 辅助标量 P
-    // P = E * (r^2 + a^2) - a * Lz
-    // double P_val = ...;
-    double P_val = E * (r * r + m_a * m_a) - m_a * Lz;
+    Complex i = 1.0i;
 
-    // 计算 n . u (标量)
-    // 公式: n_mu u^mu = (1 / 2Sigma) * ( -P_val - Sigma * ur )
-    // 推导自 n_mu = (Delta / 2Sigma) * (-1, -Sigma/Delta, 0, a sin^2)
-    // double n_dot_u = ...;
-    double n_dot_u = (1.0 / (2.0 * Sigma)) * (P_val + Sigma * ur);
+    // 变量定义: rho (LRR Eq. 6 definition: rho = (r - i a cos)^-1)
+    // 注意：很多文献(Teukolsky 73)定义 rho = -1/(r-ia cos)。
+    // LRR 2003-6 Eq 6 明确写的是 (r - i a cos)^-1。请务必确认这里的一致性。
+    // 如果 swsh 的算符是基于标准定义的，这里符号可能会影响。
+    // 暂时遵循 LRR 论文原文定义。
+    Complex rho = 1.0 / (r - i * a * cos_th);
+    Complex rho_bar = 1.0 / (r + i * a * cos_th);   
+    Complex rho2 = rho * rho;
+    Complex rho3 = rho2 * rho;
+    Complex rho_bar2 = rho_bar * rho_bar;
+    
+    // 场变量 K (LRR Eq. 16)
+    // K = (r^2 + a^2) * omega - m * a
+    double K_val = (r*r + a*a) * omega - m * a;
+    Complex K_div_Delta = K_val / Delta;
+    // ==========================================================
+    // 3. 计算 SWSH 函数值及其导数算符
+    // ==========================================================
+    // x = cos(theta)
+    double x_cos = cos_th;
+    
+    // S (spin weight -2)
+    Complex S = swsh.evaluate_S(x_cos);
+    
+    // swsh.evaluate_L2dag_S 计算的是 (partial_theta - m/sin + s*cot) S (不含 a*w*sin)
+    // 且使用的是 s = -2。
+    // 真正的 Teukolsky 算符 L_s^dag 包含 a*w*sin(theta)
+    Complex L2S_raw = swsh.evaluate_L2dag_S(x_cos);
+    Complex L_minus2_dag_S = L2S_raw + a_omega * sin_th * S; // L_{-2}^dag S
+    // 计算 partial_theta S
+    Complex V_minus2 = get_Vs(-2, m, a_omega, sin_th, cos_th);
+    Complex dS_dtheta = L_minus2_dag_S - V_minus2 * S;
+    // 计算 L_1^dag L_2^dag S 需要二阶导数信息
+    // 利用 swsh.evaluate_L1dag_L2dag_S (计算 partial(L2S_raw) + V_{-1_raw} * L2S_raw)
+    Complex L1L2S_raw = swsh.evaluate_L1dag_L2dag_S(x_cos);
+    // 还原 partial_theta (L_{-2}^dag S)
+    // d/dth (L_{-2}^dag S) = d/dth (L2S_raw + aw sin S) 
+    //                      = d(L2S_raw) + aw cos S + aw sin dS
+    // 从 L1L2S_raw 提取 d(L2S_raw): 
+    // L1L2S_raw = d(L2S_raw) + (-m/sin + (-1)cot) * L2S_raw
+    double cot_th = cos_th / (sin_th + 1e-10);
+    Complex V_minus1_raw = -(double)m/sin_th - 1.0 * cot_th;
+    Complex d_L2S_raw_dtheta = L1L2S_raw - V_minus1_raw * L2S_raw;
+    
+    Complex d_L_minus2_dag_S_dtheta = d_L2S_raw_dtheta 
+                                    + a_omega * cos_th * S 
+                                    + a_omega * sin_th * dS_dtheta;
+    // ==========================================================
+    // 4. 计算 C 系数 (Tetrad projections of T_munu)
+    // 依据 LRR Eq. (30), (31), (32)
+    // ==========================================================
+    
+    // 辅助项
+    // Term 1: E(r^2 + a^2) - a Lz + Sigma * dr/dtau
+    double term_rad = (E_part * (r*r + a*a) - a * Lz_part + Sigma * ur)/(2.0*Sigma);
+    
+    // Term 2: i sin(theta) [ a E - Lz/sin^2(theta) ] + Sigma * dtheta/dtau
+    Complex term_ang =-rho* i * sin_th * (a * E_part - Lz_part / sin2) + Sigma * uth/(std::sqrt(2.0));
 
-    // 计算 m_bar . u (复标量)
-    // 公式: m_bar_mu u^mu = (1 / sqrt(2)) * rho_bar * ( Sigma * uth - i/sin_th * (Lz - a * E * sin_th^2) )
-    // 注意 rho_bar = -1/(r + i a cos) 实际上对应公式中的系数 1/(r - i a cos)? 
-    // 让我们核对 m_mu 的定义。
-    // LRR Eq 2.6: m^mu = ... => m_mu u^mu.
-    // Result: m_bar_dot_u = (1/sqrt(2)) * (r - i a cos)^-1 * [ Sigma * u^th - i * (Lz/sin - a E sin) ]
-    // (r - i a cos)^-1 = -rho
-    
-    // Complex m_bar_dot_u = ...;
-    double T_val = Lz / sin_th - m_a * E * sin_th; // Angular term
-    Complex prefactor_mbar = -rho / (std::sqrt(2.0) );
-    
-    Complex m_bar_dot_u = prefactor_mbar * (Sigma * uth - i * T_val);
+    // [Eq. 30] C_nn
+    // Coeff = 1 / (4 * Sigma^3 * ut)
+    Complex C_nn = (term_rad * term_rad)/(Sigma*ut);
 
+    // [Eq. 31] C_mbarn
+    // Coeff = -rho / (2 * sqrt(2) * Sigma^2 * ut)
+    // Note: LRR Eq 31 has a minus sign.
+    Complex C_mbarn = term_rad * term_ang/(Sigma*ut);
 
-    // 4. 计算源项系数 A (LRR Eq. 2.38)
-    // C_nn = (n.u)^2
-    // C_mbarn = (n.u) * (m_bar.u)
-    // C_mbarmbar = (m_bar.u)^2
-    
-    Complex C_nn = n_dot_u * n_dot_u/(Sigma*ut);
-    Complex C_mbarn =n_dot_u * m_bar_dot_u/(Sigma*ut);
-    Complex C_mbarmbar = m_bar_dot_u * m_bar_dot_u/(Sigma*ut);
+    // [Eq. 32] C_mbarmbar
+    // Coeff = rho^2 / (2 * Sigma * ut)
+    Complex C_mbarmbar =  (term_ang * term_ang)/(Sigma*ut);
 
-    // 5. 计算 A 系数 (Source Coefficients)
-    // 依据 Teukolsky 方程源项展开
-    // T = ... [ A0 delta + A1 delta' + A2 delta'' ]
+    // ==========================================================
+    // 5. 计算 A 系数 (Source terms coefficients)
+    // 依据 LRR Eq. (37) - (42)
+    // ==========================================================
     
-    // --- T_nn 项 (仅贡献 A_nn0) ---
-    // coeff ~ -2 * rho^-4 * C_nn
-    proj.A_nn0 = -2.0 * std::pow(rho, -4) * C_nn;
+    // 预计算常用的因子
+    Complex factor_sqrt_pi = 1.0 / std::sqrt(M_PI);
+    Complex factor_sqrt_2pi = 1.0 / std::sqrt(2.0 * M_PI);
+    Complex factor_2_sqrt_pi_Delta = 2.0 / (std::sqrt(M_PI) * Delta);
+    
+    // ----------------------------------------------------------
+    // A_nn0 (Eq. 37)
+    // A_nn0 = -2/(sqrt(2pi)*Delta^2) * rho^-2 * rhobar^-1 * C_nn * L_-1^dag [ rho^-4 L_2^dag (rho^3 S) ]
+    // ----------------------------------------------------------
+    
+    // --- 准备 Op_nn0 计算所需的公共项 ---
+    // 我们需要计算 L_1^dag [ rho^-4 * L_2^dag (rho^3 S) ]
+    // 其中 S 的 spin weight 为 -2
+    
+    // 1. 计算 Inner = L_2^dag (rho^3 S)
+    // L_2^dag = partial_theta + V_2
+    // V_2 = V_{-2} + 4 cot theta
+    Complex V_2 = get_Vs(2, m, a_omega, sin_th, cos_th);
+    
+    // d(rho)/dtheta = -rho^2 * (-i a (-sin)) = -i a rho^2 sin
+    Complex d_rho_dth = -i * a * rho2 * sin_th;
+    Complex d_rho3_dth = 3.0 * rho2 * d_rho_dth; // = -3 i a rho^4 sin
+    
+    // Inner = d(rho^3 S) + V_2 * rho^3 S
+    //       = (d_rho3) S + rho^3 (dS) + V_2 rho^3 S
+    //       = rho^3 [ dS + (V_2 - 3 i a rho sin) S ]
+    Complex term_inner_bracket = dS_dtheta + (V_2 - 3.0 * i * a * rho * sin_th) * S;
+    Complex Inner = rho3 * term_inner_bracket; // L_2^dag (rho^3 S)
+    
+    // 为了下一步求导，我们需要 d(Inner)/dtheta
+    // d(Inner) = d(rho^3) * bracket + rho^3 * d(bracket)
+    // d(bracket) = d(dS) + d(V_2)*S + V_2*dS - d(3ia rho sin S)
+    
+    // d(dS) = d(L_{-2}^dag S - V_{-2} S)
+    //       = d(L_{-2}^dag S) - d(V_{-2}) S - V_{-2} dS
+    Complex d_V_minus2_dth = m * cos_th / sin2 + a_omega * cos_th - (-2.0) / sin2; // d/dth(-2 cot) = +2/sin^2
+    Complex d2S_dtheta2 = d_L_minus2_dag_S_dtheta - d_V_minus2_dth * S - V_minus2 * dS_dtheta;
+    
+    // d(V_2)/dtheta
+    Complex d_V2_dth = m * cos_th / sin2 + a_omega * cos_th - (2.0) / sin2;
+    
+    // d(rho sin) = d_rho sin + rho cos = (-i a rho^2 sin) sin + rho cos
+    Complex d_rho_sin_dth = -i * a * rho2 * sin2 + rho * cos_th;
+    
+    Complex d_bracket_dth = d2S_dtheta2 
+                          + d_V2_dth * S + V_2 * dS_dtheta 
+                          - 3.0 * i * a * (d_rho_sin_dth * S + rho * sin_th * dS_dtheta);
+                          
+    Complex d_Inner_dth = d_rho3_dth * term_inner_bracket + rho3 * d_bracket_dth;
 
-    // --- T_mbarn 项 (贡献 A_mbarn0, A_mbarn1) ---
-    // 原项形式: 2*sqrt(2) * (d_r + ...) (rho^-3 C_mbarn)
-    // 算符导数展开: 
-    // A_mbarn1 = 2*sqrt(2) * rho^-3 * C_mbarn
-    // A_mbarn0 = 2*sqrt(2) * [ d_r(rho^-3 C_mbarn) ] ? 
-    // 不，通常是将导数作用在 test function 上，分部积分后变号。
-    // 这里我们返回原始算符前的系数，积分器负责处理导数。
-    // 但如果是 Green 函数积分，我们需要 explicitly 展开 delta 的导数。
+    // 2. 计算 Outer = L_1^dag [ rho^-4 * Inner ]
+    // Outer = d(rho^-4 Inner) + V_1 * (rho^-4 Inner)
+    //       = d(rho^-4) Inner + rho^-4 d(Inner) + V_1 rho^-4 Inner
+    // d(rho^-4) = -4 rho^-5 d_rho = -4 rho^-5 (-i a rho^2 sin) = 4 i a rho^-3 sin
+    Complex V_1 = get_Vs(1, m, a_omega, sin_th, cos_th);
     
-    // 系数定义 (参考常见数值实现):
-    Complex term_mbarn = 2.0 * std::sqrt(2.0) * std::pow(rho, -3);
-    proj.A_mbarn1 = term_mbarn * C_mbarn;
-    // 0阶项通常包含 rho 的导数修正 (由于 delta' -> delta 分部积分)
-    // d(rho^-3)/dr = -3 rho^-4 * d(rho)/dr = -3 rho^-4 * (-rho^2) = 3 rho^-2 ?
-    // 简单起见，如果积分器处理 derivative of delta，则这里只需传原始系数。
-    // 但既然你要求 A_mbarn1 等，说明积分器是简单的 Sum(A_i * R^(i))。
-    // 这意味着这里不需要做分部积分的系数修正，而是直接返回算符前的系数?
-    // 或者 A_mbarn0 是算符内部不含导数的部分?
-    // LRR Eq 2.9 中算符 L_1^dag 包含 d_r 和 r 相关项。
-    // L_s^dag = d_r + i K / Delta + 2s(r-M)/Delta
-    // 因此:
-    proj.A_mbarn0 = proj.A_mbarn1 * (i * (P_val + a*Lz - a*a*E)/Delta + 2.0*(-1.0)*(r - 1.0)/Delta); // s=-1 for this term?
-    // 注意: 具体 s 值依赖于项的级数
+    Complex Op_nn0_val = 4.0 * i * a * std::pow(rho, -3) * sin_th * Inner
+                       + std::pow(rho, -4) * d_Inner_dth
+                       + V_1 * std::pow(rho, -4) * Inner;
+    proj.A_nn0 = (-2.0 *factor_sqrt_2pi/( Delta * Delta)) 
+                 * std::pow(rho, -2) * std::pow(rho_bar, -1) * C_nn 
+                 * Op_nn0_val;
 
-    // --- T_mbarmbar 项 (贡献 A_mbarmbar0, 1, 2) ---
-    // 原项形式: - rho^-2 * (d_r + ...) (d_r + ...) C_mbarmbar
-    Complex term_mbarmbar = -std::pow(rho, -2);
+    // ----------------------------------------------------------
+    // A_mbarn0 (Eq. 38)
+    // A_mbarn0 = 2/(sqrt(pi)*Delta) * rho^-3 * C_mbarn * [ (L_2^dag S)(iK/Delta + rho + rhobar) - a sin S (K/Delta)(rhobar - rho) ]
+    // ----------------------------------------------------------
     
-    // 最高阶 (2阶导)
-    proj.A_mbarmbar2 = term_mbarmbar * C_mbarmbar;
+    // --- A_mbarn0 (Eq. 38) ---
+    // Term = (L_2^dag S)(iK/Delta + rho + rhobar) - a sin S (K/Delta)(rhobar - rho)
+    // L_2^dag S = dS + V_2 S
+    Complex L2_dag_S = dS_dtheta + V_2 * S;
+    Complex term_mbarn0 = L2_dag_S * (i * K_div_Delta + rho + rho_bar)
+                        - a * sin_th * S * K_div_Delta * (rho_bar - rho);
     
-    // 1阶导系数 (来自算符 L 的一次展开)
-    // 包含两个 L 算符的交叉项
-    // Coeff of d_r:
-    proj.A_mbarmbar1 = proj.A_mbarmbar2 * 2.0 * (i * (P_val + a*Lz - a*a*E)/Delta + 2.0*(-1.0)*(r - 1.0)/Delta);
+    proj.A_mbarn0 = factor_2_sqrt_pi_Delta * std::pow(rho, -3) * C_mbarn * term_mbarn0;
+
+    // --- A_mbarn1 (Eq. 40) ---
+    // Term = L_2^dag S + i a sin(rhobar - rho) S
+    Complex term_mbarn1 = L2_dag_S + i * a * sin_th * (rho_bar - rho) * S;
     
-    // 0阶导系数 (L * L 作用后的非导数项)
-    // 这是一个复杂的势函数项，近似为算符常数项的平方
-    Complex L_const = i * (P_val + a*Lz - a*a*E)/Delta + 2.0*(-1.0)*(r - 1.0)/Delta;
-    // 还需要加上 d_r(L_const) ? 
-    // 暂时用平方近似，完整形式需要 lengthy expansion
-    proj.A_mbarmbar0 = proj.A_mbarmbar2 * (L_const * L_const); 
+    proj.A_mbarn1 = factor_2_sqrt_pi_Delta * std::pow(rho, -3) * C_mbarn * term_mbarn1;
+
+    // --- A_mbarmbar0 (Eq. 39) ---
+    // Term = -i (K/Delta),r - (K/Delta)^2 + 2i rho (K/Delta)
+    // (K/Delta),r = (K' Delta - K Delta') / Delta^2
+    // K' = 2rw, Delta' = 2(r-M)
+    double dK_dr = 2.0 * r * omega;
+    double dDelta_dr = 2.0 * (r - M);
+    Complex d_K_div_Delta_dr = (dK_dr * Delta - K_val * dDelta_dr) / (Delta * Delta);
+    
+    Complex term_mm0 = -i * d_K_div_Delta_dr - K_div_Delta * K_div_Delta + 2.0 * i * rho * K_div_Delta;
+    
+    proj.A_mbarmbar0 = -factor_sqrt_2pi * std::pow(rho, -3) * rho_bar * C_mbarmbar * S * term_mm0;
+
+    // --- A_mbarmbar1 (Eq. 41) ---
+    // Term = i K/Delta + rho
+    Complex term_mm1 = i * K_div_Delta + rho;
+    
+    proj.A_mbarmbar1 = (-2.0 * factor_sqrt_2pi) * std::pow(rho, -3) * rho_bar * C_mbarmbar * S * term_mm1;
+
+    // --- A_mbarmbar2 (Eq. 42) ---
+    proj.A_mbarmbar2 = -factor_sqrt_2pi * std::pow(rho, -3) * rho_bar * C_mbarmbar * S;
 
     return proj;
+}

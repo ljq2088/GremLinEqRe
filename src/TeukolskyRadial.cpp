@@ -980,3 +980,37 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_R_in(
         return {R_total, dR_total};
     }
 }
+// 在文件末尾添加
+Complex TeukolskyRadial::evaluate_ddR(double r, Complex R, Complex dR) const {
+    // 物理参数
+    double M = m_M;
+    double a = m_a;
+    // double omega = m_omega; // 已在类成员中
+    
+    // 几何量
+    double Delta = r*r - 2.0*M*r + a*a;
+    double dDelta_dr = 2.0*(r - M);
+    
+    // 势函数 V(r) (注意: Teukolsky Equation 的 V 定义有多种，需与 LRR 一致)
+    // LRR Eq. 113: Delta^{-s} d/dr(Delta^{s+1} dR/dr) + H(r) R = 0
+    // 其中 H(r) = (K^2 - 2is(r-M)K)/Delta + 4is w r - lambda
+    
+    Complex K_val = (r*r + a*a)*m_omega - (double)m_m*a;
+    Complex term1 = (K_val*K_val - 2.0i*(double)m_s*(r-M)*K_val) / Delta;
+    Complex term2 = 4.0i * (double)m_s * m_omega * r;
+    Complex H_potential = term1 + term2 - m_lambda;
+    
+    // 展开微分算符:
+    // Term1 = Delta^{-s} [ (s+1)Delta^s Delta' R' + Delta^{s+1} R'' ]
+    //       = (s+1) Delta' R' + Delta R''
+    //
+    // 方程: (s+1) Delta' R' + Delta R'' + H R = 0
+    // => R'' = - (1/Delta) * [ (s+1) Delta' R' + H R ]
+    
+    Complex numerator = ((double)m_s + 1.0) * dDelta_dr * dR + H_potential * R;
+    
+    // 视界处 Delta -> 0，需要处理（通常数值积分会在视界外一点截断，不用过度担心除零）
+    if (std::abs(Delta) < 1e-12) return 0.0; 
+    
+    return -numerator / Delta;
+}

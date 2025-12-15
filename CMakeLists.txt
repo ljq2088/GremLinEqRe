@@ -40,7 +40,8 @@ pybind11_add_module(_core
     python/bindings.cpp
     src/TeukolskyRadial.cpp
     src/Clebsch.cpp  
-    src/SWSH.cpp      
+    src/SWSH.cpp
+    src/TeukolskySource.cpp      
 )
 target_link_libraries(_core PRIVATE
     ${ARB_LIB}
