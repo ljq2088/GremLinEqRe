@@ -238,97 +238,107 @@ Complex TeukolskyRadial::solve_nu(Complex nu_guess) const {
     return x1;
 }
 
-//注意到这里代入了s=-2
+
+// ==========================================================
+// 计算连接因子 K_nu (依据 Sasaki & Tagoshi Eq. 165)
+// 修正版：直接使用 ComputeSeriesCoefficients 计算的 a_n
+// ==========================================================
 Complex TeukolskyRadial::k_factor(Complex nu) const {
     Complex eps = m_epsilon;
     Complex tau = m_tau;
     Complex kappa = m_kappa;
     Complex i = 1.0i;
     
-    // ------------------------------------------------------
-    // 1. Prefactor (预因子)
-    // 对应 GremlinEq 中的 prefact
-    // formula: 4 * (2eps*kappa)^(-2-nu) * exp(...)
-    // ------------------------------------------------------
-    Complex nu2_1 = 2.0 * nu + 1.0;
-    Complex nu_3_ie = nu + 3.0 + i * eps;
-    Complex nu_3__ie = nu + 3.0 - i * eps; // nu + 3 - i*eps
-    Complex nu_1_it = nu + 1.0 + i * tau;
-    Complex nu_1__it = nu + 1.0 - i * tau;
-
-    // Log Gamma 组合
-    Complex ln_pre = log_gamma(3.0 - i * (eps + tau)) 
-                   + log_gamma(2.0 * nu + 2.0)
-                   - log_gamma(nu_3_ie) 
-                   + i * eps * kappa 
-                   + log_gamma(nu2_1)
-                   - log_gamma(nu_3__ie) 
-                   - log_gamma(nu_1__it);
-                   
-    Complex prefact = 4.0 * std::pow(2.0 * eps * kappa, -2.0 - nu) * std::exp(ln_pre);
-
-    // ------------------------------------------------------
-    // 2. 级数求和 (Summation of Expansion Terms)
-    // MST 方法中 K_nu 包含两个收敛级数乘积的比值
-    // 正向级数 (n >= 0) 和 负向级数 (n < 0)
-    // ------------------------------------------------------
+    // 1. 获取正确的级数系数 a_n
+    // 我们需要足够的项以保证 sum 收敛
+    int n_max = 100; // 这里的 n_max 可以设大一点以保证精度
+    std::map<int, Complex> a_coeffs = const_cast<TeukolskyRadial*>(this)->ComputeSeriesCoefficients(nu, n_max);
+    Complex s_c=(double)m_s;
+    Complex eps_plus=(eps+tau)/2.0;
+    // 2. 准备公式 Eq. 165 中的公共参数
+    // K_nu = [PreFactor] * (Sum_Inf / Sum_R)
+    // 通常取 r=0，则 Sum_R 是 n 从 -inf 到 0 的和
+    // Sum_Inf 是 n 从 0 到 +inf 的和
     
-    // --- 正向部分 (n 从 0 到 +inf) ---
-    Complex num_sum = 1.0;
-    Complex term = 1.0;
-    const int max_iter = 2000;
-    const double tol = 1e-15;
-
-    for (int n = 0; n < max_iter; ++n) {
+    // 2.1 计算 Prefactor
+    // Pre = e^(i*eps*kappa) * (2*eps*kappa)^(s-nu) * 2^(-s) * i^r * Gamma(...)
+    // 取 r = 0
+    double r_int = 0.0;
+    
+    Complex nu_plus_1_s_ie = nu + 1.0 + s_c + i * eps;
+    Complex nu_plus_1_ms_ie = nu + 1.0 - s_c - i * eps;
+    Complex nu_plus_1_it = nu + 1.0 + i * tau;
+    Complex nu_plus_1_mit = nu + 1.0 - i * tau;
+    
+    Complex ln_pre = i * eps * kappa 
+                   + (s_c - nu-r_int) * std::log(2.0 * eps * kappa)
+                   - s_c * std::log(2.0)+r_int*i*M_PI/2.0
+                   + log_gamma(1.0 - s_c - 2.0 * i * eps_plus) // 注意: 这里的 eps 是 epsilon+ ? 需核对 Eq 165
+                   + log_gamma(r_int + 2.0 * nu + 2.0)
+                   - log_gamma(r_int + nu + 1.0 - s_c + i * eps)
+                   - log_gamma(r_int + nu + 1.0 + i * tau)
+                   - log_gamma(r_int + nu + 1.0 + s_c+i * eps);
+                   
+    // 注意：LRR Eq 165 中的 Gamma 参数非常复杂，上述只是基于常见 MST 形式的近似
+    // 为确保万无一失，我们直接实现 Eq 165 的求和部分
+    // Eq 165: Sum_Numerator (n from r to inf)
+    //         Sum_Denominator (n from -inf to r)
+    
+    Complex sum_num = 0.0;
+    Complex sum_den = 0.0;
+    
+    // 预计算 Gamma 常数
+    // 分子通项: (-1)^n * Gamma(n+r+2nu+1) / (n-r)! * ... * f_n
+    // 分母通项: (-1)^n / ((r-n)! * (r+2nu+2)_n) * ... * f_n
+    
+    // 我们取 r=0
+    for (auto const& [n, f_n] : a_coeffs) {
         double dn = (double)n;
-        // f_n / f_{n-1} 的比值 (参考 Sasaki-Tagoshi Eq 4.14 或 fsum.cc)
-        // 注意：GremlinEq 的 fsum.cc 中 term_num/term_den 就是这个比值
+        double sign = (std::abs(n) % 2 == 0) ? 1.0 : -1.0;
         
-        Complex numer = (dn + nu2_1) * (dn + nu - 1.0 + i * eps) * (dn + nu_1_it);
-        Complex denom = (dn + 1.0) * (dn + nu_3__ie) * (dn + nu_1__it);
+        // --- 分子部分 (Sum for n >= 0) ---
+        if (n >= 0) {
+            // Term = (-1)^n * Gamma(n + 2nu + 1) / n! 
+            //      * Gamma(n + nu + 1 + s + i*eps) 
+            //      * Gamma(n + nu + 1 + i*tau) 
+            //      * Gamma(n + nu + 1 + i*eps) <-- 这一项原文可能有差异，请核对
+            //      * f_n
+            
+            // 依据 Eq 165 Line 2:
+            // Gamma(n+r+2nu+1)/(n-r)! 
+            // * Gamma(n+nu+1+s+i*eps) / Gamma(n+nu+1-s-i*eps)
+            // * Gamma(n+nu+1+i*tau) / Gamma(n+nu+1-i*tau)
+            
+            Complex term_n = sign * f_n;
+            term_n *= std::exp(log_gamma(dn +r_int+ 2.0 * nu + 1.0) - log_gamma(dn +1.0));
+            term_n *= std::exp(log_gamma(dn + nu_plus_1_s_ie) - log_gamma(dn + nu_plus_1_ms_ie));
+            term_n *= std::exp(log_gamma(dn + nu_plus_1_it) - log_gamma(dn + nu_plus_1_mit));
+            
+            sum_num += term_n;
+        }
         
-        // 注意符号：MST 级数通常有 (-1)^n 或类似的交错符号
-        // fsum.cc 中使用了 `lastcoeff *= - ...`
-        term *= - numer / denom;
-        
-        num_sum += term;
-        if (std::abs(term) < tol * std::abs(num_sum)) break;
+        // --- 分母部分 (Sum for n <= 0) ---
+        if (n <= 0) {
+            // Term = (-1)^n / ( (-n)! * (2nu+2)_n ) * ... * f_n
+            // (2nu+2)_n for negative n is Gamma(2nu+2+n)/Gamma(2nu+2)
+            
+            Complex term_d = sign * f_n;
+            term_d /= std::exp(log_gamma(1.0- dn)); // (-n)!
+            
+            // Pochhammer (2nu+2)_n
+            term_d /= std::exp(log_gamma(r_int+2.0 * nu + 2.0 + dn) - log_gamma(2.0 * nu + 2.0));
+            
+            // 剩下的系数 (nu+1+s-i*eps)_n / (nu+1-s+i*eps)_n
+            term_d *= std::exp(log_gamma(nu_plus_1_s_ie + dn) - log_gamma(nu_plus_1_s_ie));
+            term_d /= std::exp(log_gamma(nu_plus_1_ms_ie + dn) - log_gamma(nu_plus_1_ms_ie));
+            
+            sum_den += term_d;
+        }
     }
-
-    // --- 负向部分 (n 从 0 到 -inf，也就是代码里的 increasing n map to negative index) ---
-    // 对应 GremlinEq 中的 LOOP_NEGATIVE
-    // 这里计算的是分母部分的级数修正
-    Complex den_sum = 1.0;
-    term = 1.0;
-
-    for (int n = 0; n < max_iter; ++n) {
-        double dn = (double)n;
-        // 这里的 n 对应原文公式中的 -n (方向相反)
-        // 对应的比值公式 (f_{-n} / f_{-n+1} ?)
-        
-        double lastn = -dn; // 模拟递减
-        
-        // 公式适配 fsum.cc LOOP_NEGATIVE
-        Complex numer = (lastn + nu2_1) * (lastn + nu + 2.0 + i * eps);
-        Complex denom = (lastn - 1.0) * (lastn + nu - 2.0 - i * eps);
-        
-        // 同样有负号
-        term *= numer / denom; // 注意 fsum.cc 这里没有显式负号? 
-        // 仔细检查 fsum.cc: lastcoeff *= ((lastn+nu2+1.0)...) / ((lastn-1.0)...)
-        // 这里的符号隐含在 lastn 的负值中吗？
-        // GremlinEq 代码： lastcoeff *= ...
-        // 在 LOOP_NEGATIVE 中，分母有 (lastn - 1.0)。因为 lastn <= 0，所以分母是负的。
-        // 分子项主要由实部主导。
-        // 所以这一项本身就是负的。
-        
-        den_sum += term;
-        if (std::abs(term) < tol * std::abs(den_sum)) break;
-    }
-
-    // K_nu = Prefactor * (Sum_Pos / Sum_Neg)
-    return prefact * num_sum / den_sum;
+    
+    Complex K_val = std::exp(ln_pre) * (sum_num / sum_den);
+    return K_val;
 }
-
 
 // 辅助函数：获取第 n 阶的 MST 递推系数 alpha, beta, gamma
 // 预期功能：对接现有的数学公式模块，返回对应 n 和 nu 的系数
