@@ -310,7 +310,7 @@ Complex TeukolskyRadial::k_factor(Complex nu) const {
             // * Gamma(n+nu+1+i*tau) / Gamma(n+nu+1-i*tau)
             
             Complex term_n = sign * f_n;
-            term_n *= std::exp(log_gamma(dn +r_int+ 2.0 * nu + 1.0) - log_gamma(dn +1.0));
+            term_n *= std::exp(log_gamma(dn +r_int+ 2.0 * nu + 1.0) - log_gamma(dn +1.0-r_int)); // n!
             term_n *= std::exp(log_gamma(dn + nu_plus_1_s_ie) - log_gamma(dn + nu_plus_1_ms_ie));
             term_n *= std::exp(log_gamma(dn + nu_plus_1_it) - log_gamma(dn + nu_plus_1_mit));
             
@@ -326,7 +326,7 @@ Complex TeukolskyRadial::k_factor(Complex nu) const {
             term_d /= std::exp(log_gamma(1.0- dn)); // (-n)!
             
             // Pochhammer (2nu+2)_n
-            term_d /= std::exp(log_gamma(r_int+2.0 * nu + 2.0 + dn) - log_gamma(2.0 * nu + 2.0));
+            term_d /= std::exp(log_gamma(r_int+2.0 * nu + 2.0 + dn) - log_gamma(r_int+2.0 * nu + 2.0));
             
             // 剩下的系数 (nu+1+s-i*eps)_n / (nu+1-s+i*eps)_n
             term_d *= std::exp(log_gamma(nu_plus_1_s_ie + dn) - log_gamma(nu_plus_1_s_ie));

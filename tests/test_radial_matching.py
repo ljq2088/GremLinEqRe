@@ -53,27 +53,34 @@ def test_matching():
 
     # 6. 绘图验证 (调整范围，关注视界附近)
     r_plus = 1.0 + np.sqrt(1.0 - a**2)
+   
+    kappa = np.sqrt(1.0 - a**2)
+    # 推荐位置: r_match = r_+ + 1.2 * kappa (既不太靠近视界，又在收敛区内)
+    r_match_optimal = r_plus + 1.2 * kappa
     print(f"Horizon r+: {r_plus:.4f}")
+    print(f"Optimal Matching Radius (r_+ + 1.2*kappa): {r_match_optimal:.4f}")
 
-    # 重点扫描 [r_plus, 10M] 区域
-    r_values = np.linspace(r_plus + 0.01, 10.0, 300)
+    # 扫描区域：集中在匹配点附近
+    r_values = np.linspace(r_plus + 0.05, 6.0, 400)
     
     val_near_real = []
     val_far_real = []
     diff_list = []
     
     for r in r_values:
-        # A. 近场 (Hypergeometric) - 只要 r 不是太大
-        if r < 6.0: 
+        # A. 近场 (Hypergeometric): 只在收敛半径内计算
+        # 如果超出 r_+ + 2*kappa (约3.6M)，数值误差会指数级放大
+        if r < r_match_optimal + 1.0: 
             res_near = tr.Evaluate_Hypergeometric(r, nu, a_coeffs_pos)
             v_near = res_near[0]
         else:
             v_near = complex(np.nan, np.nan)
         
-        # B. 远场 (Coulomb) - 只要 r 不是太小
-        if r > 2.2:
+        # B. 远场 (Coulomb): 在匹配点之外计算
+        if r > r_match_optimal - 0.5:
             res_c_pos = tr.Evaluate_Coulomb(r, nu, a_coeffs_pos)
             res_c_neg = tr.Evaluate_Coulomb(r, nu_neg, a_coeffs_neg)
+            # 组合远场解
             v_far = K_pos * res_c_pos[0] + K_neg * res_c_neg[0]
         else:
             v_far = complex(np.nan, np.nan)
@@ -81,36 +88,39 @@ def test_matching():
         val_near_real.append(v_near.real)
         val_far_real.append(v_far.real)
         
-        # 记录差异 (仅当两者都有效时)
+        # 计算误差
         if not np.isnan(v_near.real) and not np.isnan(v_far.real):
-            diff_list.append(abs(v_near - v_far))
+            abs_diff = abs(v_near - v_far)
+            # 相对误差处理: 避免除以0
+            denom = max(abs(v_near), 1e-10)
+            diff_list.append(abs_diff / denom)
         else:
             diff_list.append(np.nan)
 
     # 7. 绘图
     plt.figure(figsize=(10, 10))
     
-    # 子图 1: 波函数实部
+    # 子图1: 波函数实部
     plt.subplot(2, 1, 1)
+    # 限制 Y 轴范围，避免因某一点发散导致全图不可读
+    plt.ylim(-500, 500) # 根据 K_nu ~ 300，波幅可能在这个量级
+    
     plt.plot(r_values, val_near_real, 'r-', lw=4, alpha=0.5, label='Near (Hypergeo)')
-    plt.plot(r_values, val_far_real, 'b--', lw=1.5, label='Far (Coulomb Combined)')
-    plt.ylim(-0.5, 5.0) # 限制纵坐标，防止发散点破坏视图
-    plt.ylabel('Real[R(r)]')
-    plt.title(f'Matching Check (Correct $\lambda$={lambda_val:.3f})')
+    plt.plot(r_values, val_far_real, 'b--', lw=1.5, label='Far (Coulomb)')
+    plt.axvline(x=r_match_optimal, color='g', linestyle=':', label=f'Match r={r_match_optimal:.2f}')
+    plt.title(f'Radial Match (r_match inside convergence radius)')
     plt.legend()
     plt.grid(True)
     
-    # 子图 2: 误差 (对数坐标)
+    # 子图2: 相对误差
     plt.subplot(2, 1, 2)
     plt.semilogy(r_values, diff_list, 'k-', lw=1)
-    plt.axvline(x=3.0, color='g', linestyle='--', label='Possible Match r=3M')
-    plt.ylabel('Absolute Difference')
-    plt.xlabel('Radius r/M')
+    plt.axvline(x=r_match_optimal, color='g', linestyle=':')
+    plt.ylabel('Relative Error')
+    plt.xlabel('r/M')
     plt.grid(True, which="both")
-    plt.legend()
-
-    plt.savefig("radial_matching_fixed.png")
-    print("\nPlot saved. Look for the region where Error is minimal (~1e-8 or less).")
+    
+    plt.savefig("radial_matching_optimized.png")
 
 if __name__ == "__main__":
     test_matching()
