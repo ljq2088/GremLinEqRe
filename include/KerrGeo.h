@@ -28,19 +28,19 @@
      * 包含 4-位置 和 4-速度
      */
     struct State {
-        // 4-Position: x[0]=t, x[1]=r, x[2]=theta, x[3]=phi
-        std::vector<Real> x; 
-        // 4-Velocity: u[0]=u^t, u[1]=u^r, u[2]=u^theta, u[3]=u^phi
-        std::vector<Real> u;
-
-        // 默认构造函数：初始化为 4 维零向量
+        std::vector<double> x; // 4-position: t, r, theta, phi
+        std::vector<double> u; // 4-velocity: ut, ur, uth, uphi
+        
+        // 构造函数初始化，避免未定义行为
         State() : x(4, 0.0), u(4, 0.0) {}
     };
-     /**
-      * @brief 通用构造函数：直接通过守恒量初始化
-      * 适用于任何类型的轨道（圆形/非圆，赤道/倾斜）
-      */
-     KerrGeo(Real a, Real E, Real Lz, Real Q);
+
+    // [修改] 构造函数需要存储守恒量
+    KerrGeo(Real a, double E, double Lz, double Q);
+
+
+   
+    
  
      /**
       * @brief 辅助构造函数：圆形赤道轨道 (Circular Equatorial)
@@ -54,9 +54,9 @@
      // 获取守恒量
      // ==========================================================
      Real spin() const { return m_a; }
-     Real energy() const { return m_E; }
-     Real angular_momentum() const { return m_Lz; }
-     Real carter_constant() const { return m_Q; }
+     double energy() const { return m_E; }
+     double angular_momentum() const { return m_Lz; }
+     double carter_constant() const { return m_Q; }
  
      // ==========================================================
      // 势函数及其解析导数 (Analytical Potentials & Jacobians)

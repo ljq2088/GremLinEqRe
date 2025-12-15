@@ -131,7 +131,7 @@ struct PhysicalAmplitudes {
       Complex K_neg_nu,   // 预先算好的 K_{-nu-1}
       const std::map<int, Complex>& a_coeffs_pos, // nu 的系数
       const std::map<int, Complex>& a_coeffs_neg, // -nu-1 的系数
-      double r_match = 5.0 // 拼接半径，默认 5M (可视情况调整)
+      double r_match 
   );
    /**
     * @brief 利用径向方程计算 R''(r)

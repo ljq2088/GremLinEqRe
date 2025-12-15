@@ -8,10 +8,10 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(_core, m) {
      m.doc() = "GremLinEqRe C++ Core Module (General Orbits)";
-
+     py::class_<KerrGeo>geo(m,"KerrGeo","通用克尔几何");
      py::class_<KerrGeo>(m, "KerrGeo")
           // 构造函数 1: 通用 (E, Lz, Q)
-          .def(py::init<double, double, double, double>(),
+          .def(py::init<Real, double, double, double>(),
                py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"),
                "通用构造函数: 直接指定守恒量")
           
@@ -31,7 +31,18 @@ PYBIND11_MODULE(_core, m) {
           .def("diff_potential_r", &KerrGeo::diff_potential_r, "径向势一阶导 dR/dr")
           .def("diff2_potential_r", &KerrGeo::diff2_potential_r, "径向势二阶导 d2R/dr2")
           .def("potential_theta", &KerrGeo::potential_theta, "角向势 Theta(cos_theta)");
-          py::class_<TeukolskyRadial>(m, "TeukolskyRadial")
+     py::class_<KerrGeo::State>(geo, "State")
+          .def(py::init<>())
+          .def_readwrite("x", &KerrGeo::State::x)
+          .def_readwrite("u", &KerrGeo::State::u)
+          .def("__repr__", [](const KerrGeo::State &s) {
+              return "<KerrGeo.State t=" + std::to_string(s.x[0]) + "...>";
+          });
+          geo.def(py::init<Real, double, double, double>(), 
+            py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"))
+          .def_property_readonly("energy", &KerrGeo::energy)
+          .def_property_readonly("angular_momentum", &KerrGeo::angular_momentum);
+     py::class_<TeukolskyRadial>(m, "TeukolskyRadial")
           .def(py::init<Real, Real, Real, int, int, int, Real>(), 
                py::arg("M"), py::arg("a_spin"), py::arg("omega"), 
                py::arg("s"), py::arg("l"), py::arg("m"), py::arg("lambda"))
@@ -78,7 +89,7 @@ PYBIND11_MODULE(_core, m) {
                py::arg("K_neg_nu"), 
                py::arg("a_coeffs_pos"), 
                py::arg("a_coeffs_neg"),
-               py::arg("r_match") = 5.0,
+               py::arg("r_match") ,
                "计算全域径向函数 R^in(r) 及其导数 (自动拼接)");
 
      py::class_<SWSH>(m, "SWSH")

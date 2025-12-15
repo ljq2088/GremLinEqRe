@@ -10,7 +10,7 @@
  // 构造与初始化
  // ==========================================================
  
- KerrGeo::KerrGeo(Real a, Real E, Real Lz, Real Q)
+ KerrGeo::KerrGeo(Real a,double E, double Lz, double Q)
      : m_a(a), m_E(E), m_Lz(Lz), m_Q(Q) {}
  
  KerrGeo KerrGeo::from_circular_equatorial(Real a, Real r, bool is_prograde) {
