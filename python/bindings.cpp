@@ -55,7 +55,8 @@ PYBIND11_MODULE(_core, m) {
           .def("ComputeSeriesCoefficients", &TeukolskyRadial::ComputeSeriesCoefficients)
           .def("hyp2f1", &TeukolskyRadial::Hyp2F1, 
                "Calculate Gaussian Hypergeometric function 2F1(a, b; c; z) using Arb library.",
-               py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"))
+               py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"),
+               py::arg("regularized")=false)
           .def("Evaluate_Hypergeometric", &TeukolskyRadial::Evaluate_Hypergeometric,
                     py::arg("r"), py::arg("nu"), py::arg("a_coeffs"),
                     "计算近视界径向函数 R(r) 及其导数 dR/dr")
@@ -64,7 +65,7 @@ PYBIND11_MODULE(_core, m) {
                          "计算远场径向函数 R_C^nu(r) 及其导数")
                          
           .def("hyp1f1", &TeukolskyRadial::Hyp1F1,
-                         py::arg("a"), py::arg("b"), py::arg("z"),
+                         py::arg("a"), py::arg("b"), py::arg("z"),py::arg("regularized")=false,
                          "Wrapper for 1F1 confluent hypergeometric function")
           .def("Evaluate_R_in", &TeukolskyRadial::Evaluate_R_in,
                py::arg("r"), 

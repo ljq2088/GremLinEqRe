@@ -109,7 +109,7 @@ struct PhysicalAmplitudes {
 );
    // 辅助函数：计算高斯超几何函数 2F1(a,b;c;z) 及其导数
    std::complex<double> Hyp2F1(std::complex<double> a, std::complex<double> b, 
-      std::complex<double> c, std::complex<double> z);
+      std::complex<double> c, std::complex<double> z,bool regularized=false);
    // 计算远场径向函数 R_C^nu(r) 及其导数
    // 适用范围: 远场区域 (r 较大)
    // 返回值: pair.first = R_C(r), pair.second = dR_C/dr
@@ -121,7 +121,7 @@ struct PhysicalAmplitudes {
 
    // 辅助函数：计算合流超几何函数 1F1(a;b;z)
    // 对应 LRR Eq. 142 中的 Phi 或 M 函数
-   std::complex<double> Hyp1F1(std::complex<double> a, std::complex<double> b, std::complex<double> z);
+   std::complex<double> Hyp1F1(std::complex<double> a, std::complex<double> b, std::complex<double> z,bool regularized=false);
    // 全域径向函数求值器
    // 自动在近场和远场算法间切换
    std::pair<Complex, Complex> Evaluate_R_in(

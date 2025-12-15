@@ -630,7 +630,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
     Complex P_val=exp(i*eps*kappa*x_val) * pow((-x_val),(alpha)) * pow((1-x_val),(beta));
 
     Complex LogP=i*eps*kappa*x_val+(alpha)*log(-x_val)+(beta)*log(1-x_val);
-    Complex dLogPdx = i*eps*kappa - (alpha)/(-x_val) - (beta)/(1-x_val);
+    Complex dLogPdx = i*eps*kappa + (alpha)/(x_val) - (beta)/(1-x_val);
 
     
 
@@ -642,7 +642,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
     Complex sum_S = 0.0;      // S(x)
     Complex sum_dSdx = 0.0;   // dS/dx
     
-    // 超几何函数的参数 c (Eq. 120: c = 1 - s - i*eps - i*tau)
+
     
 
     for (const auto& [n, a_n] : a_coeffs) {
@@ -660,11 +660,11 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
         // 计算 F(a,b;c;x)
         // 注意: 这里假设你有一个 Hyp2F1 实现或暂时用占位符
         // 如果没有库，可以用简单的泰勒级数展开(仅当 |x| 很小时有效)，或者调用外部库
-        Complex F_val = Hyp2F1(hyp_a, hyp_b, hyp_c, x_val);
+        Complex F_val = Hyp2F1(hyp_a, hyp_b, hyp_c, x_val,0);
         
         // 计算 dF/dx
         // 公式: d/dx 2F1(a,b;c;x) = (a*b/c) * 2F1(a+1, b+1; c+1; x) 
-        Complex dFdx_val = (hyp_a * hyp_b / hyp_c) * Hyp2F1(hyp_a + 1.0, hyp_b + 1.0, hyp_c + 1.0, x_val);
+        Complex dFdx_val = (hyp_a * hyp_b / hyp_c) * Hyp2F1(hyp_a + 1.0, hyp_b + 1.0, hyp_c + 1.0, x_val,0);
         
         sum_S += a_n * F_val;
         sum_dSdx += a_n * dFdx_val;
@@ -687,7 +687,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
 
 // 简单的超几何函数占位符 (如果还没有 GSL 或其他库绑定)
 // 注意：实际运行时需要替换为真实的数值实现 (如 GSL 的 gsl_sf_hyperg_2F1_complex)
-Complex TeukolskyRadial::Hyp2F1(Complex a, Complex b, Complex c, Complex z) {
+Complex TeukolskyRadial::Hyp2F1(Complex a, Complex b, Complex c, Complex z, bool regularized) {
     // 1. 初始化 Arb 复数变量
     acb_t acb_a, acb_b, acb_c, acb_z, acb_res;
     acb_init(acb_a);
@@ -710,7 +710,7 @@ Complex TeukolskyRadial::Hyp2F1(Complex a, Complex b, Complex c, Complex z) {
     // 4. 调用 Arb 的超几何函数
     // acb_hypgeom_2f1(res, a, b, c, z, regularization, prec)
     // regularization=0 表示计算标准的 2F1
-    acb_hypgeom_2f1(acb_res, acb_a, acb_b, acb_c, acb_z, 0, prec);
+    acb_hypgeom_2f1(acb_res, acb_a, acb_b, acb_c, acb_z, regularized, prec);
 
     // 5. 将结果转回 std::complex<double>
     // arf_get_d 转换 Arb 浮点数 (arf) 到 double
@@ -846,13 +846,13 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         Complex hyp_b = 2.0 * L + 2.0;
         Complex arg_z = 2.0 * i * z_hat;
         
-        Complex phi_val = Hyp1F1(hyp_a, hyp_b, arg_z);
-        Complex dphi_dz_arg = (hyp_a / hyp_b) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z); // dPhi / d(2iz)
+        Complex phi_val = Hyp1F1(hyp_a, hyp_b, arg_z,1);
+        Complex dphi_dz_arg = (hyp_a / hyp_b) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z,1); // dPhi / d(2iz)
         
         // Gamma 因子
-        Complex lg_g1 = log_gamma(L + 1.0 - i * eta_coulomb);
-        Complex lg_g2 = log_gamma(2.0 * L + 2.0);
-        Complex gamma_factor = std::exp(lg_g1 - lg_g2);
+        Complex lg_g1 = log_gamma(hyp_a);
+        Complex lg_g2 = log_gamma(hyp_b);
+        Complex gamma_factor = std::exp(lg_g1);
         
         // 组合 F_L
         // F_L = e^{-iz} * 2^L * z^{L+1} * gamma_factor * phi
@@ -870,7 +870,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         Complex dLogTerm_dz = -i + (L + 1.0) / z_hat;
         Complex dPhi_dz = dphi_dz_arg * 2.0 * i;
         
-        Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor) * dPhi_dz;
+        Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor*hyp_b) * dPhi_dz;
 
         // 累加
         sum_f += C_n * F_val;
@@ -896,7 +896,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
 // ==========================================================
 // Arb 包装器：计算合流超几何函数 1F1(a; b; z)
 // ==========================================================
-Complex TeukolskyRadial::Hyp1F1(Complex a, Complex b, Complex z) {
+Complex TeukolskyRadial::Hyp1F1(Complex a, Complex b, Complex z, bool regularized) {
     // 1. 初始化 Arb 变量
     acb_t acb_a, acb_b, acb_z, acb_res;
     acb_init(acb_a);
@@ -914,7 +914,7 @@ Complex TeukolskyRadial::Hyp1F1(Complex a, Complex b, Complex z) {
 
     // 4. 计算 1F1 (regularized=0)
     // acb_hypgeom_1f1(res, a, b, z, regularized, prec)
-    acb_hypgeom_1f1(acb_res, acb_a, acb_b, acb_z, 0, prec);
+    acb_hypgeom_1f1(acb_res, acb_a, acb_b, acb_z,regularized, prec);
 
     // 5. 转换回 Complex
     double res_r = arf_get_d(arb_midref(acb_realref(acb_res)), ARF_RND_NEAR);
