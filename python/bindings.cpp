@@ -8,14 +8,20 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(_core, m) {
      m.doc() = "GremLinEqRe C++ Core Module (General Orbits)";
-     py::class_<KerrGeo>geo(m,"KerrGeo","通用克尔几何");
-     py::class_<KerrGeo>(m, "KerrGeo")
-          // 构造函数 1: 通用 (E, Lz, Q)
-          .def(py::init<Real, double, double, double>(),
-               py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"),
-               "通用构造函数: 直接指定守恒量")
+     py::class_<KerrGeo>geo(m,"KerrGeo","克尔几何");
+     py::class_<KerrGeo::State>(geo, "State")
+          .def(py::init<>())
+          .def_readwrite("x", &KerrGeo::State::x)
+          .def_readwrite("u", &KerrGeo::State::u)
+          .def("__repr__", [](const KerrGeo::State &s) {
+              return "<KerrGeo.State t=" + std::to_string(s.x[0]) + "...>";
+          });
+          geo.def(py::init<Real, double, double, double>(), 
+            py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"))
           
-          // 构造函数 2: 圆形赤道 (工厂模式)
+          
+          
+          // 构造函数 : 圆形赤道
           .def_static("from_circular_equatorial", &KerrGeo::from_circular_equatorial,
                py::arg("a"), py::arg("r"), py::arg("is_prograde"),
                "工厂函数: 从轨道半径创建圆形赤道轨道")
@@ -31,17 +37,14 @@ PYBIND11_MODULE(_core, m) {
           .def("diff_potential_r", &KerrGeo::diff_potential_r, "径向势一阶导 dR/dr")
           .def("diff2_potential_r", &KerrGeo::diff2_potential_r, "径向势二阶导 d2R/dr2")
           .def("potential_theta", &KerrGeo::potential_theta, "角向势 Theta(cos_theta)");
-     py::class_<KerrGeo::State>(geo, "State")
-          .def(py::init<>())
-          .def_readwrite("x", &KerrGeo::State::x)
-          .def_readwrite("u", &KerrGeo::State::u)
-          .def("__repr__", [](const KerrGeo::State &s) {
-              return "<KerrGeo.State t=" + std::to_string(s.x[0]) + "...>";
-          });
-          geo.def(py::init<Real, double, double, double>(), 
-            py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"))
-          .def_property_readonly("energy", &KerrGeo::energy)
-          .def_property_readonly("angular_momentum", &KerrGeo::angular_momentum);
+     py::class_<AsymptoticAmplitudes>(m, "AsymptoticAmplitudes")
+          .def_readwrite("R_in_coef_inf_inc", &AsymptoticAmplitudes::R_in_coef_inf_inc)
+          .def_readwrite("R_in_coef_inf_trans", &AsymptoticAmplitudes::R_in_coef_inf_trans);
+     py::class_<PhysicalAmplitudes>(m, "PhysicalAmplitudes")
+          .def_readwrite("B_trans", &PhysicalAmplitudes::B_trans)
+          .def_readwrite("B_inc", &PhysicalAmplitudes::B_inc)
+          .def_readwrite("B_ref", &PhysicalAmplitudes::B_ref)
+          .def_readwrite("C_trans", &PhysicalAmplitudes::C_trans);
      py::class_<TeukolskyRadial>(m, "TeukolskyRadial")
           .def(py::init<Real, Real, Real, int, int, int, Real>(), 
                py::arg("M"), py::arg("a_spin"), py::arg("omega"), 
@@ -90,7 +93,12 @@ PYBIND11_MODULE(_core, m) {
                py::arg("a_coeffs_pos"), 
                py::arg("a_coeffs_neg"),
                py::arg("r_match") ,
-               "计算全域径向函数 R^in(r) 及其导数 (自动拼接)");
+               "计算全域径向函数 R^in(r) 及其导数 (自动拼接)")
+          .def("ComputeAmplitudes", &TeukolskyRadial::ComputeAmplitudes,
+               py::arg("nu"), py::arg("a_coeffs"),
+               "计算R")
+          .def("ComputePhysicalAmplitudes", &TeukolskyRadial::ComputePhysicalAmplitudes,
+               py::arg("nu"), py::arg("a_coeffs"),py::arg("amps_nu"));
 
      py::class_<SWSH>(m, "SWSH")
           .def(py::init<int, int, int, double>(),

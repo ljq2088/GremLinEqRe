@@ -65,17 +65,18 @@ def test_circular_orbit_amplitudes():
     print(f"         Renormalized Angular Momentum nu = {nu}")
 
     # 3.4 计算 MST 级数系数
-    n_max = 30
+    n_max = 50
     coeffs_pos = tr.ComputeSeriesCoefficients(nu, n_max)
     coeffs_neg = tr.ComputeSeriesCoefficients(-nu - 1.0, n_max)
     
     # 3.5 计算 K 因子
     K_pos = tr.k_factor(nu)
     K_neg = tr.k_factor(-nu - 1.0)
-    
+    r_plus= 1.0 + np.sqrt(1.0 - a**2)
+    kappa= np.sqrt(1.0 - a**2)
     # 3.6 计算轨道位置处的波函数值 R, dR, ddR
     # Evaluate_R_in 会自动处理近场/远场匹配
-    R_val, dR_val = tr.Evaluate_R_in(r_orbit, nu, K_pos, K_neg, coeffs_pos, coeffs_neg)
+    R_val, dR_val = tr.Evaluate_R_in(r_orbit, nu, K_pos, K_neg, coeffs_pos, coeffs_neg,r_plus+kappa)
     
     # 使用径向方程精确计算二阶导
     ddR_val = tr.evaluate_ddR(r_orbit, R_val, dR_val)
@@ -88,7 +89,7 @@ def test_circular_orbit_amplitudes():
     # ---------------------------------------------------------
     print("\n[Source] Computing Source Projections T_lm...")
     
-    ts = _core.TeukolskySource(a, omega, m)
+    ts = _core.TeukolskySource(a, omega,s, l, m)
     
     # 构造粒子状态 (State)
     state = _core.KerrGeo.State()
@@ -137,7 +138,7 @@ def test_circular_orbit_amplitudes():
     amps_pos = tr.ComputeAmplitudes(nu, coeffs_pos)
     amps_neg = tr.ComputeAmplitudes(-nu - 1.0, coeffs_neg)
     
-    phys_amps = tr.ComputePhysicalAmplitudes(nu, amps_pos, K_pos, amps_neg, K_neg)
+    phys_amps = tr.ComputePhysicalAmplitudes(nu, coeffs_pos, amps_neg)
     B_inc = phys_amps.B_inc
     print(f"         B_inc = {B_inc:.4e}")
     

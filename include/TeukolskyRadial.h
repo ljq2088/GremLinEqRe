@@ -78,14 +78,7 @@ struct PhysicalAmplitudes {
    // 输入: nu, 以及之前算好的级数系数 map a_coeffs
    AsymptoticAmplitudes ComputeAmplitudes(std::complex<double> nu, 
       const std::map<int, std::complex<double>>& a_coeffs);
-   PhysicalAmplitudes ComputePhysicalAmplitudes(
-      std::complex<double> nu,
-      const AsymptoticAmplitudes& amp_nu,        // nu 分支的 A+, A-
-      std::complex<double> K_nu,                 // nu 分支的 K因子
-      const AsymptoticAmplitudes& amp_minus_nu,  // -nu-1 分支的 A+, A-
-      std::complex<double> K_minus_nu            // -nu-1 分支的 K因子
-   );
-
+   
      /**
       * @brief 计算连分式的值
       * 用于求解重整化角动量 nu 的超越方程
