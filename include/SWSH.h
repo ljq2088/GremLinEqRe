@@ -17,12 +17,12 @@ public:
      */
     SWSH(int s, int l, int m, double a_omega);
 
-    // 获取物理特征值 Lambda (用于径向方程)
-    double get_lambda() const { return m_lambda; }
+
     
     // 获取本征值 E (用于与文献数据表比对)
     // E = lambda + s(s+1) - (aw)^2 + 2*m*aw
     double get_E() const { return m_E; }
+    double get_lambda() const { return m_lambda; }
     /**
      * @brief 计算自旋加权球/椭球谐函数 S_lm(theta) 的值
      * @param x = cos(theta)

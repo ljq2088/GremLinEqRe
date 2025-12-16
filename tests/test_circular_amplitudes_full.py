@@ -53,7 +53,7 @@ def test_circular_orbit_amplitudes():
     
     # 3.1 计算角向特征值 Lambda (使用 SWSH 模块)
     swsh = _core.SWSH(s, l, m, a * omega)
-    lam = swsh.E # 获取本征值 E_lm (注意区分代码中的 lambda 和 E)
+    lam = swsh.m_lambda # 获取本征值 E_lm (注意区分代码中的 lambda 和 E)
     print(f"         Angular Eigenvalue E_lm = {lam:.8f}")
 
     # 3.2 初始化径向求解器
@@ -138,7 +138,7 @@ def test_circular_orbit_amplitudes():
     amps_pos = tr.ComputeAmplitudes(nu, coeffs_pos)
     amps_neg = tr.ComputeAmplitudes(-nu - 1.0, coeffs_neg)
     
-    phys_amps = tr.ComputePhysicalAmplitudes(nu, coeffs_pos, amps_neg)
+    phys_amps = tr.ComputePhysicalAmplitudes(nu, coeffs_pos, amps_pos)
     B_inc = phys_amps.B_inc
     print(f"         B_inc = {B_inc:.4e}")
     

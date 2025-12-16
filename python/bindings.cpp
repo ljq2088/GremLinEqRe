@@ -103,8 +103,9 @@ PYBIND11_MODULE(_core, m) {
      py::class_<SWSH>(m, "SWSH")
           .def(py::init<int, int, int, double>(),
                     py::arg("s"), py::arg("l"), py::arg("m"), py::arg("a_omega"))
-          .def_property_readonly("lambda", &SWSH::get_lambda)
+          .def_property_readonly("m_lambda", &SWSH::get_lambda)
           .def_property_readonly("E", &SWSH::get_E)
+          .def_property_readonly("lambda", &SWSH::get_lambda, "物理分离常数 (Separation Constant)")
           .def("evaluate_S", &SWSH::evaluate_S)
           .def("evaluate_L2dag_S", &SWSH::evaluate_L2dag_S)
           .def("evaluate_L1dag_L2dag_S", &SWSH::evaluate_L1dag_L2dag_S);
