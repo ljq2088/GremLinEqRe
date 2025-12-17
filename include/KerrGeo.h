@@ -34,8 +34,14 @@
         // 构造函数初始化，避免未定义行为
         State() : x(4, 0.0), u(4, 0.0) {}
     };
+    /**
+     * @brief 根据当前坐标 x 和守恒量计算四速度 u，并更新到 State 中
+     * 仅适用于赤道面圆轨道或特定类型的轨道，通用轨道需要求解 sigma^2 * u^r^2 = R(r) 开方
+     * 这里我们实现通用的代数关系计算。
+     */
+    void update_kinematics(State& s, double r_direction = 0.0, double theta_direction = 0.0) const;
 
-    // [修改] 构造函数需要存储守恒量
+    // 构造函数需要存储守恒量
     KerrGeo(Real a, double E, double Lz, double Q);
 
 

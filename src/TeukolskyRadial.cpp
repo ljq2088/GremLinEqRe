@@ -202,7 +202,7 @@ Complex TeukolskyRadial::solve_nu(Complex nu_guess) const {
     Complex f0 = calc_g(x0);
     Complex f1 = calc_g(x1);
     
-    const int max_iter = 50;
+    const int max_iter = 100;
     const double tol = 1e-12; // 目标精度
     
     for (int i = 0; i < max_iter; ++i) {

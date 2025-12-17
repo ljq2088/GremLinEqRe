@@ -21,31 +21,29 @@
  
  // 复用之前的计算逻辑，但封装在内部静态函数中
  void KerrGeo::calc_circular_params(Real a, Real r, bool is_prograde, 
-                                    Real& E_out, Real& Lz_out, Real& Q_out) {
-     if (r <= 0) throw std::invalid_argument("Radius must be positive");
-     
-     Q_out = 0.0; // 赤道面轨道 Carter 常数为 0
-     Real v = 1.0 / std::sqrt(r);
-     Real v2 = v * v;
-     Real v3 = v2 * v;
- 
-     if (is_prograde) {
-         Real numer_e = 1.0 - v2 * (2.0 - a * v);
-         Real denom = 1.0 - v2 * (3.0 - 2.0 * a * v);
-         E_out = numer_e / std::sqrt(denom);
- 
-         Real numer_lz = 1.0 - a * v3 * (2.0 - a * v);
-         Lz_out = r * v * numer_lz / std::sqrt(denom);
-     } else {
-         Real numer_e = 1.0 - v2 * (2.0 + a * v);
-         Real denom = 1.0 - v2 * (3.0 + 2.0 * a * v);
-         E_out = numer_e / std::sqrt(denom);
- 
-         Real numer_lz = 1.0 + a * v3 * (2.0 + a * v);
-         Lz_out = -r * v * numer_lz / std::sqrt(denom); // 注意负号
-     }
- }
- 
+    Real& E_out, Real& Lz_out, Real& Q_out) {
+    if (r <= 0) throw std::invalid_argument("Radius must be positive");
+        Q_out = 0.0;
+        Real v = 1.0 / std::sqrt(r);
+        Real v2 = v * v;
+        Real v3 = v2 * v;
+        Real num_e, den, num_lz;
+        Real v4 = v2 * v2;
+    if (is_prograde) {
+        num_e = 1.0 - 2.0*v2 + a*v3;
+        den   = 1.0 - 3.0*v2 + 2.0*a*v3;
+        num_lz = 1.0 + a*a*v4 - 2.0*a*v3;
+        E_out = num_e / std::sqrt(den);
+        Lz_out = r * v * num_lz / std::sqrt(den);
+    } 
+    else {
+        num_e = 1.0 - 2.0*v2 - a*v3;
+        den   = 1.0 - 3.0*v2 - 2.0*a*v3;
+        num_lz = 1.0 + a*a*v4 + 2.0*a*v3;
+        E_out = num_e / std::sqrt(den);
+        Lz_out = -r * v * num_lz / std::sqrt(den);
+        }
+}
  // ==========================================================
  // 基础几何函数
  // ==========================================================
@@ -163,3 +161,76 @@
      Real val = m_Q - term_Lz - term_a;
      return (val < 0.0) ? 0.0 : val;
  }
+ void KerrGeo::update_kinematics(State& s, double r_direction, double theta_direction) const {
+    // 1. 提取坐标
+    double r = s.x[1];
+    double theta = s.x[2];
+    double z = std::cos(theta);
+    double sin_th = std::sin(theta);
+    double sin2 = sin_th * sin_th;
+    
+    // 2. 几何因子
+    double Sigma_val = r*r + m_a*m_a * z*z;
+    double Delta_val = r*r - 2.0*r + m_a*m_a;
+    
+    // 3. 辅助变量 P = E(r^2+a^2) - a Lz
+    double P = m_E * (r*r + m_a*m_a) - m_a * m_Lz;
+    
+    // 4. 计算 u^t
+    // Formula: Sigma * u^t = (r^2+a^2) * P / Delta + a(Lz - a E sin^2)
+    // Note: a(Lz - a E sin^2) = a*Lz - a^2*E*sin^2
+    double term_t_1 = (r*r + m_a*m_a) * P / Delta_val;
+    double term_t_2 = m_a * (m_Lz - m_a * m_E * sin2);
+    s.u[0] = (term_t_1 + term_t_2) / Sigma_val;
+    
+    // 5. 计算 u^phi
+    // Formula: Sigma * u^phi = a * P / Delta + Lz / sin^2 - a E
+    // 注意: Lz/sin^2 - aE = (Lz - a E sin^2) / sin^2
+    double term_phi_1 = m_a * P / Delta_val;
+    double term_phi_2 = m_Lz / sin2 - m_a * m_E;
+    s.u[3] = (term_phi_1 + term_phi_2) / Sigma_val;
+    
+    // 6. 计算 u^r (利用 potential_r)
+    // Sigma * u^r = +/- sqrt(R)
+    double R_val = potential_r(r);
+    if (R_val < 0.0) R_val = 0.0; // 数值噪声保护
+    s.u[1] = r_direction * std::sqrt(R_val) / Sigma_val;
+    
+    // 7. 计算 u^theta (利用 potential_theta)
+    // Sigma * u^theta = +/- sqrt(Theta)
+    double Th_val = potential_theta(z);
+    if (Th_val < 0.0) Th_val = 0.0; // 数值噪声保护
+    s.u[2] = theta_direction * std::sqrt(Th_val) / Sigma_val;
+
+    // 8. 鲁棒性检验: 归一化条件 u.u = -1
+    // ==========================================================
+    // 构造逆度规分量 (或者直接利用测地线方程的哈密顿约束 H = 1/2 g^uv p_u p_v = -1/2)
+    // 这里我们直接验证 u_mu u^mu = -1
+    // Metric in BL coords:
+    // g_tt = -(1 - 2Mr/Sigma)
+    // g_tphi = -2Mar sin^2 / Sigma
+    // g_rr = Sigma / Delta
+    // g_thth = Sigma
+    // g_phiphi = sin^2 [ (r^2+a^2)^2 - Delta a^2 sin^2 ] / Sigma
+    
+    double M = 1.0;
+    double g_tt = -(1.0 - 2.0*M*r/Sigma_val);
+    double g_tphi = -2.0*M*m_a*r*sin2 / Sigma_val;
+    double g_rr = Sigma_val / Delta_val;
+    double g_thth = Sigma_val;
+    double term_pp = (r*r + m_a*m_a)*(r*r + m_a*m_a) - Delta_val * m_a*m_a * sin2;
+    double g_phiphi = term_pp * sin2 / Sigma_val;
+    
+    double norm = g_tt*s.u[0]*s.u[0] + 2.0*g_tphi*s.u[0]*s.u[3] + g_rr*s.u[1]*s.u[1]
+                + g_thth*s.u[2]*s.u[2] + g_phiphi*s.u[3]*s.u[3];
+                
+    if (std::abs(norm + 1.0) > 1e-4) {
+        std::cerr << "[KerrGeo::Warning] 4-Velocity Normalization Failed!" << std::endl;
+        std::cerr << "  r=" << r << " a=" << m_a << " E=" << m_E << " Lz=" << m_Lz << std::endl;
+        std::cerr << "  u^u = " << norm << " (Expected -1.0)" << std::endl;
+        // 可以选择 throw exception，或者仅打印警告
+        throw std::runtime_error("Kinematics Check Failed: u.u != -1");
+    }
+
+ 
+}

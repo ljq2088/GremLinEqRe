@@ -75,7 +75,7 @@
      int l_min = std::max(std::abs(m_s), std::abs(m_m));
      
      // 矩阵截断大小：l 对应第 (l - l_min) 个解，预留 30 个基底保证收敛
-     int K = (m_l - l_min) + 30;
+     int K = (m_l - l_min) + 50;
      
      Eigen::MatrixXd M(K, K);
      M.setZero();

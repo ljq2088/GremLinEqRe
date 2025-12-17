@@ -19,7 +19,9 @@ PYBIND11_MODULE(_core, m) {
           geo.def(py::init<Real, double, double, double>(), 
             py::arg("a"), py::arg("E"), py::arg("Lz"), py::arg("Q"))
           
-          
+          .def("update_kinematics", &KerrGeo::update_kinematics,
+               py::arg("state"), py::arg("r_direction")=0.0, py::arg("theta_direction")=0.0,
+               "根据守恒量更新四速度")
           
           // 构造函数 : 圆形赤道
           .def_static("from_circular_equatorial", &KerrGeo::from_circular_equatorial,
