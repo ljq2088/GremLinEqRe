@@ -857,7 +857,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         Complex arg_z = 2.0 * i * z_hat;
         
         Complex phi_val = Hyp1F1(hyp_a, hyp_b, arg_z,1);
-        Complex dphi_dz_arg = (hyp_a / hyp_b) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z,1); // dPhi / d(2iz)
+        Complex dphi_dz_arg = (hyp_a ) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z,1); // dPhi / d(2iz)
         
         // Gamma 因子
         Complex lg_g1 = log_gamma(hyp_a);
@@ -880,7 +880,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         Complex dLogTerm_dz = -i + (L + 1.0) / z_hat;
         Complex dPhi_dz = dphi_dz_arg * 2.0 * i;
         
-        Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor*hyp_b) * dPhi_dz;
+        Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor) * dPhi_dz;
 
         // 累加
         sum_f += C_n * F_val;

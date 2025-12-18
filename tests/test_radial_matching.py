@@ -20,7 +20,7 @@ def test_matching():
     # 1. 物理参数
     M = 1.0
     a = 0.5
-    omega = 0.2     # 频率 M*omega
+    omega = 0.1    # 频率 M*omega
     s = -2
     l = 2
     m = 2
@@ -28,7 +28,7 @@ def test_matching():
     # 2. [关键修正] 使用 SWSH 模块计算精确的 Lambda
     print(f"Calculating correct lambda for a*omega = {a*omega:.4f} ...")
     swsh = _core.SWSH(s, l, m, a * omega)
-    lambda_val = swsh.E # 获取计算出的特征值
+    lambda_val = swsh.m_lambda # 获取计算出的特征值
     print(f"Correct Lambda: {lambda_val:.6f}")
 
     # 3. 初始化径向求解器
@@ -40,7 +40,7 @@ def test_matching():
     print(f"Solved nu: {nu:.6f}")
 
     # 5. 计算系数与 K因子
-    n_max = 30 # 增加阶数以提高精度
+    n_max = 100 # 增加阶数以提高精度
     a_coeffs_pos = tr.ComputeSeriesCoefficients(nu, n_max)
     
     nu_neg = -nu - 1.0
@@ -55,18 +55,18 @@ def test_matching():
     r_plus = 1.0 + np.sqrt(1.0 - a**2)
    
     kappa = np.sqrt(1.0 - a**2)
-    # 推荐位置: r_match = r_+ + 1.2 * kappa (既不太靠近视界，又在收敛区内)
-    r_match_optimal = r_plus + 1.2 * kappa
+    # 推荐位置: r_match = r_+ + 1.8 * kappa (既不太靠近视界，又在收敛区内)
+    r_match_optimal = r_plus + 1.8 * kappa
     print(f"Horizon r+: {r_plus:.4f}")
-    print(f"Optimal Matching Radius (r_+ + 1.2*kappa): {r_match_optimal:.4f}")
+    print(f"Optimal Matching Radius (r_+ + 1.8*kappa): {r_match_optimal:.4f}")
 
     # 扫描区域：集中在匹配点附近
-    r_values = np.linspace(r_plus + 0.05, 6.0, 400)
+    r_values = np.linspace(r_plus + 0.05, 10.0, 800)
     
     val_near_real = []
     val_far_real = []
     diff_list = []
-    
+    val_R_in=[]
     for r in r_values:
         # A. 近场 (Hypergeometric): 只在收敛半径内计算
         # 如果超出 r_+ + 2*kappa (约3.6M)，数值误差会指数级放大
@@ -87,7 +87,13 @@ def test_matching():
             
         val_near_real.append(v_near.real)
         val_far_real.append(v_far.real)
+        # # C.Evaluate_R_in
         
+        # v_R_in,_ = tr.Evaluate_R_in(r, nu,K_pos,K_neg, a_coeffs_pos, a_coeffs_neg, r_match_optimal)
+        # if np.isnan(v_R_in.real):
+        #     v_R_in = complex(np.nan, np.nan)
+        #     print(f"R_in: {v_R_in}")
+        # val_R_in.append(v_R_in.real)
         # 计算误差
         if not np.isnan(v_near.real) and not np.isnan(v_far.real):
             abs_diff = abs(v_near - v_far)
@@ -107,6 +113,7 @@ def test_matching():
     
     plt.plot(r_values, val_near_real, 'r-', lw=4, alpha=0.5, label='Near (Hypergeo)')
     plt.plot(r_values, val_far_real, 'b--', lw=1.5, label='Far (Coulomb)')
+    # plt.plot(r_values, val_R_in, 'g-', lw=1, label='R_in')
     plt.axvline(x=r_match_optimal, color='g', linestyle=':', label=f'Match r={r_match_optimal:.2f}')
     plt.title(f'Radial Match (r_match inside convergence radius)')
     plt.legend()
