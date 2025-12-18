@@ -110,7 +110,7 @@ def generate_waveform():
     
     # 简单的波形合成 (h ~ Z/r * exp(-i wt))
     S_22 = swsh_22.evaluate_S(math.cos(theta_obs))
-    r_star = r_obs_geo + 2*M_phys*math.log(r_obs/(2*M) - 1.0)
+    r_star = r_obs + 2*M*math.log(r_obs/(2*M) - 1.0)
     
     # h = -2/w^2 * psi4
     factor = -2.0 / (w_22**2 * r_obs_geo) * S_22 * Z_22*mu
