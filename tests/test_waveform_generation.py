@@ -114,10 +114,10 @@ def generate_waveform():
     
     # h = -2/w^2 * psi4
     factor = -2.0 / (w_22**2 * r_obs_geo) * S_22 * Z_22*mu
-    
+    dt=1.0#秒
     # 时间轴: 演化 3 个周期
     T_period = 2 * math.pi / (w_22 / 2.0) # omega_wave = 2 * Omega_phi
-    times = np.linspace(0, 3*T_period, 200)
+    times = np.arange(0, 3*T_period, dt)
     
     h_plus = []
     h_cross = []
@@ -133,13 +133,13 @@ def generate_waveform():
         
         h_plus.append(h_comp.real)
         h_cross.append(-h_comp.imag)
-        
+    times *= T_scale # 转换为秒 
     # 绘图
     plt.figure(figsize=(10, 6))
     plt.plot(times, h_plus, label=r'$h_+$')
     plt.plot(times, h_cross, label=r'$h_\times$', linestyle='--')
     plt.title(f'GW Strain (l=2,m=2) from Circular Orbit r={r_orbit}M, a={a}')
-    plt.xlabel('Time (M)')
+    plt.xlabel('Time (s)')
     plt.ylabel('Strain')
     plt.legend()
     plt.grid(True, alpha=0.3)
