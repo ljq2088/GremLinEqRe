@@ -101,7 +101,7 @@ def test_circular_orbit_amplitudes():
     # 利用归一化条件 g_uv u^u u^v = -1 和 u^phi = Omega * u^t
     # g_tt (ut)^2 + 2 g_tphi (ut)(uphi) + g_phiphi (uphi)^2 = -1
     # => (ut)^2 [ g_tt + 2 Omega g_tphi + Omega^2 g_phiphi ] = -1
-    
+    geo.update_kinematics(state, 0.0, 0.0)
     # 赤道面度规分量 (BL coords)
     Sigma = r_orbit**2
     Delta = r_orbit**2 - 2.0*M*r_orbit + a**2

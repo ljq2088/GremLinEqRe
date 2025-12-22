@@ -92,7 +92,7 @@ def debug_flux_calc(a, r):
     
     # 4. Coefficients
     print("  Computing Coeffs...", end="")
-    n_max=100
+    n_max=50
     try:
         coeffs_pos = tr.ComputeSeriesCoefficients(nu, n_max)
         coeffs_neg = tr.ComputeSeriesCoefficients(-nu-1, n_max)
@@ -158,7 +158,7 @@ def run_debug():
     # 测试导致崩溃的参数
     # Case 1: r=6.0, a=0.9
     print("================ DEBUG CASE 1 ================")
-    a = 0.9
+    a = 0.5
     r = 6.0
     dE_dr = debug_energy_deriv(a, r)
     flux = debug_flux_calc(a, r)

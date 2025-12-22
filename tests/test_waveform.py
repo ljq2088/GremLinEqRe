@@ -20,7 +20,7 @@ def test_circular_orbit_amplitudes():
 
     # 1. 物理参数设定
     M = 1.0
-    a = 0.9          
+    a = 0.5         
     r_orbit = 5.0    
     s = -2           
     l = 2
@@ -44,9 +44,9 @@ def test_circular_orbit_amplitudes():
     
     swsh = _core.SWSH(s, l, m, a * omega)
     
-    # [修正 1] 使用 swsh.lambda 而不是 swsh.E
+    
     # Teukolsky 方程中的 lambda = E_lm - 2amw + (aw)^2 - s(s+1)
-    lam_val = swsh.lambda 
+    lam_val = swsh.m_lambda 
     print(f"         Eigenvalue (swsh.E)      = {swsh.E:.8f}")
     print(f"         Separation Const (lambda)= {lam_val:.8f} [CORRECTED]")
 
@@ -121,7 +121,7 @@ def test_circular_orbit_amplitudes():
     W_val = R_val * term0 - dR_val * term1 + ddR_val * term2
     
     # 最终复振幅 Z_inf
-    Z_inf = W_val / (2.0j * omega * B_inc)
+    Z_inf = 2.0*PI*W_val / (2.0j * omega * B_inc)
     
     print("\n---------------------------------------------------------")
     print(f"RESULTS: Z_infinity (l={l}, m={m})")

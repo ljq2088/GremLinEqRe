@@ -103,6 +103,10 @@ struct PhysicalAmplitudes {
    // 辅助函数：计算高斯超几何函数 2F1(a,b;c;z) 及其导数
    std::complex<double> Hyp2F1(std::complex<double> a, std::complex<double> b, 
       std::complex<double> c, std::complex<double> z,bool regularized=false);
+   std::complex<double> Hyp2F1_Scaled(std::complex<double> a, std::complex<double> b, 
+      std::complex<double> c, std::complex<double> z,std::complex<double> factor);
+   std::complex<double> Hyp2F1_FullyScaled(std::complex<double> a, std::complex<double> b, 
+      std::complex<double> c, std::complex<double> z,std::complex<double> factor,std::complex<double> log_factor);
    // 计算远场径向函数 R_C^nu(r) 及其导数
    // 适用范围: 远场区域 (r 较大)
    // 返回值: pair.first = R_C(r), pair.second = dR_C/dr
@@ -115,6 +119,8 @@ struct PhysicalAmplitudes {
    // 辅助函数：计算合流超几何函数 1F1(a;b;z)
    // 对应 LRR Eq. 142 中的 Phi 或 M 函数
    std::complex<double> Hyp1F1(std::complex<double> a, std::complex<double> b, std::complex<double> z,bool regularized=false);
+   std::complex<double> Hyp1F1_Scaled(std::complex<double> a, std::complex<double> b, std::complex<double> z,std::complex<double> log_mult);
+   std::complex<double> Hyp1F1_FullyScaled(std::complex<double> a, std::complex<double> b, std::complex<double> z,std::complex<double> factor,std::complex<double> log_factor);
    // 全域径向函数求值器
    // 自动在近场和远场算法间切换
    std::pair<Complex, Complex> Evaluate_R_in(
@@ -132,6 +138,11 @@ struct PhysicalAmplitudes {
     * 展开: Delta R'' + 2(s+1)(r-M) R' + (V_pot) R = 0
     */
    Complex evaluate_ddR(double r, Complex R, Complex dR) const;
+   // 如果更改了物理参数（omega, s等），必须调用此函数
+   void ResetCalibration() { 
+      m_is_calibrated = false;   
+      m_match_calibration_factor = 1.0;
+  }
  private:
    Real m_M;
    Real m_a;
@@ -150,7 +161,15 @@ struct PhysicalAmplitudes {
    Complex m_tau_sq;
    // ===存储特征值 nu ===
    Complex m_nu;
+   // 用于缓存连接处的校准因子
+   Complex m_match_calibration_factor = 1.0; 
+   bool m_is_calibrated = false; // 标记是否已经计算过校准因子
 
+   // 辅助函数：专门计算未校准的远场组合解
+   std::pair<Complex, Complex> Compute_Raw_Coulomb_Combo(
+      double r, Complex nu, Complex K_nu, Complex K_neg_nu,
+      const std::map<int, Complex>& a_coeffs_pos,
+      const std::map<int, Complex>& a_coeffs_neg);
     
     
    

@@ -74,6 +74,12 @@ PYBIND11_MODULE(_core, m) {
                "Calculate Gaussian Hypergeometric function 2F1(a, b; c; z) using Arb library.",
                py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"),
                py::arg("regularized")=false)
+          .def("hyp2f1_scaled", &TeukolskyRadial::Hyp2F1_Scaled,
+               "Calculate Gaussian Hypergeometric function 2F1(a, b; c; z) using Arb library.",
+               py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"), py::arg("factor"))
+          .def("hyp2f1_fully_scaled", &TeukolskyRadial::Hyp2F1_FullyScaled,
+               "Calculate Gaussian Hypergeometric function 2F1(a, b; c; z) using Arb library.",
+               py::arg("a"), py::arg("b"), py::arg("c"), py::arg("z"), py::arg("factor"), py::arg("log_factor"))
           .def("Evaluate_Hypergeometric", &TeukolskyRadial::Evaluate_Hypergeometric,
                     py::arg("r"), py::arg("nu"), py::arg("a_coeffs"),
                     "计算近视界径向函数 R(r) 及其导数 dR/dr")
@@ -83,6 +89,12 @@ PYBIND11_MODULE(_core, m) {
                          
           .def("hyp1f1", &TeukolskyRadial::Hyp1F1,
                          py::arg("a"), py::arg("b"), py::arg("z"),py::arg("regularized")=false,
+                         "Wrapper for 1F1 confluent hypergeometric function")
+          .def("hyp1f1_scaled", &TeukolskyRadial::Hyp1F1_Scaled,
+                         py::arg("a"), py::arg("b"), py::arg("z"),py::arg("log_mult"),
+                         "Wrapper for 1F1 confluent hypergeometric function")
+          .def("hyp1f1_fully_scaled", &TeukolskyRadial::Hyp1F1_FullyScaled,
+                         py::arg("a"), py::arg("b"), py::arg("z"),py::arg("factor"),py::arg("log_factor"),
                          "Wrapper for 1F1 confluent hypergeometric function")
           .def("evaluate_ddR", &TeukolskyRadial::evaluate_ddR,
                py::arg("r"), py::arg("R"), py::arg("dR"),
@@ -96,6 +108,8 @@ PYBIND11_MODULE(_core, m) {
                py::arg("a_coeffs_neg"),
                py::arg("r_match") ,
                "计算全域径向函数 R^in(r) 及其导数 (自动拼接)")
+          .def("ResetCalibration", &TeukolskyRadial::ResetCalibration,
+               "重置连接处校准状态 (在更改物理参数后调用)")
           .def("ComputeAmplitudes", &TeukolskyRadial::ComputeAmplitudes,
                py::arg("nu"), py::arg("a_coeffs"),
                "计算R")
