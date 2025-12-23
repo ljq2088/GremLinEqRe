@@ -124,7 +124,10 @@ PYBIND11_MODULE(_core, m) {
           .def_property_readonly("lambda", &SWSH::get_lambda, "物理分离常数 (Separation Constant)")
           .def("evaluate_S", &SWSH::evaluate_S)
           .def("evaluate_L2dag_S", &SWSH::evaluate_L2dag_S)
-          .def("evaluate_L1dag_L2dag_S", &SWSH::evaluate_L1dag_L2dag_S);
+          .def("evaluate_L1dag_L2dag_S", &SWSH::evaluate_L1dag_L2dag_S)
+          .def_static("spin_weighted_Y", &SWSH::spin_weighted_Y,
+               py::arg("s"), py::arg("l"), py::arg("m"), py::arg("x"),
+               "静态方法: 计算自旋加权球谐函数 Y_s_lm(x)");
 
 
 
