@@ -545,7 +545,7 @@ for (const auto& [n, f_n] : a_coeffs) {
 sum_f += f_n;
 }
 
-// [填空 1] B_trans 公式
+// B_trans 公式
 // 参考 Eq. 167: (eps*kappa/omega)^(2s) * exp(...) * Sum(f_n)
 // 提示: 指数部分包含 ik(epsilon_+) 和 ln(kappa) 相关项
 // Complex term_pre = ...; 
@@ -559,7 +559,7 @@ phys_amps.B_trans=std::pow((eps*kappa/omega),(2.0*s_c)) * exp(i*(eps_plus)*kappa
 
 Complex A_plus = amps_nu.R_in_coef_inf_trans; // 注意映射关系: A_+ 对应 Transmitted part of Coulomb solution
 
-// [填空 2] B_inc 公式
+// B_inc 公式
 // 参考 Eq. 168: omega^-1 * (K_nu - i * exp(...) * Ratio_Sin * K_-nu-1) * A_+ * Phase
 // 关键点: 
 // 1. sin_ratio = sin(pi*(nu - s + i*eps)) / sin(pi*(nu + s - i*eps))
@@ -576,7 +576,7 @@ phys_amps.B_inc=1.0/omega * (K_nu - i * exp(-i*PI*nu)* sin(PI*(nu - s_c + i*eps)
 
 Complex A_minus = amps_nu.R_in_coef_inf_inc; // A_- 对应 Incident part of Coulomb
 
-// [填空 3] B_ref 公式
+// B_ref 公式
 // 参考 Eq. 169: omega^(-1-2s) * (K_nu + i * exp(i*pi*nu) * K_-nu-1) * A_- * Phase_Conj
 // 注意: Phase term 与 B_inc 的相位互为复共轭 (符号相反)
 // Complex bracket_ref = ...;
@@ -589,7 +589,7 @@ phys_amps.B_ref= std::pow(omega, -1.0 - 2.0 * s_c) * (K_nu + i * exp(i*PI*nu)  *
 // 描述 R^up (Upgoing) 辐射到无穷远的系数
 // -------------------------------------------------------------------------
 
-// [填空 4] C_trans 公式
+// C_trans 公式
 // 参考 Eq. 170: omega^(-1-2s) * A_- * Phase_Ref
 // 注意: 它与 B_ref 共享很多因子，除了括号里的 K 组合
 // phys_amps.C_trans = std::pow(omega, -1.0 - 2.0 * (double)m_s) * A_minus * phase_ref;
@@ -642,90 +642,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Hypergeometric(
     Complex alpha = -s_c - i * (eps + tau) / 2.0; 
     Complex beta  = i * (eps - tau) / 2.0;
 
-    // Complex P_val=exp(i*eps*kappa*x_val) * pow((-x_val),(alpha)) * pow((1-x_val),(beta));
-
-    // Complex LogP=i*eps*kappa*x_val+(alpha)*log(-x_val)+(beta)*log(1-x_val);
-    // Complex dLogPdx = i*eps*kappa + (alpha)/(x_val) - (beta)/(1-x_val);
-
-    
-
-
-
-    // -------------------------------------------------------------------------
-    // 3. 计算级数求和 S(x) = Sum(a_n * F_n(x)) 及其导数
-    // -------------------------------------------------------------------------
-    // Complex sum_S = 0.0;      // S(x)
-    // Complex sum_dSdx = 0.0;   // dS/dx
-    
-
-    
-
-    // for (const auto& [n, a_n] : a_coeffs) {
-    //     double dn = (double)n;
-    //     Complex hyp_a = dn + nu + 1.0 - i * tau;
-    //     Complex hyp_b = -dn-nu - i * tau;
-    //     Complex hyp_c = 1.0 - s_c - i * eps - i * tau;
-    //     // 超几何函数参数 a, b
-    //     // 参考 Eq. 120: F(a, b; c; x)
-    //     // a = n + nu + 1 - i*tau
-    //     // b = -n - nu - i*tau
-    //     // Complex hyp_a = ...;
-    //     // Complex hyp_b = ...;
-        
-    //     // 计算 F(a,b;c;x)
-    //     // 如果没有库，可以用简单的泰勒级数展开(仅当 |x| 很小时有效)，或者调用外部库
-    //     Complex F_val = Hyp2F1(hyp_a, hyp_b, hyp_c, x_val,0);
-        
-    //     // 计算 dF/dx
-    //     // 公式: d/dx 2F1(a,b;c;x) = (a*b/c) * 2F1(a+1, b+1; c+1; x) 
-    //     Complex dFdx_val = (hyp_a * hyp_b / hyp_c) * Hyp2F1(hyp_a + 1.0, hyp_b + 1.0, hyp_c + 1.0, x_val,0);
-        
-    //     sum_S += a_n * F_val;
-    //     sum_dSdx += a_n * dFdx_val;
-    // }
-
-    // // -------------------------------------------------------------------------
-    // // 4. 组合最终结果
-    // // -------------------------------------------------------------------------
-    // // R(r) = P(x) * S(x)
-    // Complex R_val = P_val * sum_S;
-    
-    // // dR/dx = P'(x)S(x) + P(x)S'(x) = P(x) * [ (P'/P)*S + S' ]
-    // Complex dRdx_val = P_val * (dLogPdx* sum_S + sum_dSdx);
-    
-    // // 转换回对 r 的导数: dR/dr = dR/dx * dx/dr
-    // Complex dRdr_val = dRdx_val * dx_dr;
-
-    // return {R_val, dRdr_val};
-    // Complex sum_S = 0.0;      
-    // Complex sum_dSdx = 0.0;   
-
-    // for (const auto& [n, a_n] : a_coeffs) {
-    //     double dn = (double)n;
-    //     Complex hyp_a = dn + nu + 1.0 - i * tau;
-    //     Complex hyp_b = -dn - nu - i * tau;
-    //     Complex hyp_c = 1.0 - s_c - i * eps - i * tau;
-
-    //     // --- 修改开始 ---
-
-    //     // 1. 计算函数值项: a_n * 2F1(...)
-    //     // 直接将 a_n 作为缩放因子传入，防止中间溢出
-    //     Complex term_val = Hyp2F1_Scaled(hyp_a, hyp_b, hyp_c, x_val, a_n);
-        
-    //     // 2. 计算导数项
-    //     // 原公式: d(a_n * F)/dx = a_n * (a*b/c) * 2F1(a+1, b+1, c+1, x)
-    //     // 这里的缩放因子是: a_n * (a*b/c)
-    //     // 这个因子本身可能是有限的，但后面的 2F1 可能巨大
-    //     Complex deriv_prefactor = (hyp_a * hyp_b / hyp_c);
-    //     Complex deriv_scale = a_n * deriv_prefactor;
-        
-    //     Complex term_deriv = Hyp2F1_Scaled(hyp_a + 1.0, hyp_b + 1.0, hyp_c + 1.0, x_val, deriv_scale);
-        
-    //     // 3. 累加
-    //     // 注意：term_val 已经是 (a_n * F) 的结果了，不要再乘 a_n
-    //     sum_S += term_val;
-    //     sum_dSdx += term_deriv;
-
+ 
     Complex P_val, dLogPdx;
     if (std::abs(x_val) < 1e-16) {
         // 处理边界情况，或者直接报错
@@ -1045,78 +962,6 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
         Complex hyp_a = L + 1.0 - i * eta_coulomb;
         Complex hyp_b = 2.0 * L + 2.0;
         Complex arg_z = 2.0 * i * z_hat;
-        
-        // Complex phi_val = Hyp1F1(hyp_a, hyp_b, arg_z,1);
-        // Complex dphi_dz_arg = (hyp_a ) * Hyp1F1(hyp_a + 1.0, hyp_b + 1.0, arg_z,1); // dPhi / d(2iz)
-        
-        // // Gamma 因子
-        // Complex lg_g1 = log_gamma(hyp_a);
-        // Complex lg_g2 = log_gamma(hyp_b);
-        // Complex gamma_factor = std::exp(lg_g1);
-        
-        // // 组合 F_L
-        // // F_L = e^{-iz} * 2^L * z^{L+1} * gamma_factor * phi
-        // // 建议在 log 域组合幂次项
-        // Complex log_term_z = -i * z_hat + L * std::log(2.0) + (L + 1.0) * std::log(z_hat);
-        // Complex term_z_combined = std::exp(log_term_z);
-        
-        // Complex F_val = term_z_combined * gamma_factor * phi_val;
-
-        // // 3.3 计算 F_L 对 z_hat 的导数
-        // // dF/dz = F * (d(log_term)/dz) + term_z * gamma * (dPhi/d_arg * d_arg/dz)
-        // // d(log_term)/dz = -i + (L+1)/z
-        // // d_arg/dz = 2i
-        
-        // Complex dLogTerm_dz = -i + (L + 1.0) / z_hat;
-        // Complex dPhi_dz = dphi_dz_arg * 2.0 * i;
-        
-        // Complex dFdz_val = F_val * dLogTerm_dz + (term_z_combined * gamma_factor) * dPhi_dz;
-
-        // // 累加
-        // sum_f += C_n * F_val;
-        // sum_dfdz += C_n * dFdz_val;
-        // // 预先计算 Gamma 因子的对数
-        // Complex lg_g1 = log_gamma(hyp_a);
-        
-        // // 计算 Phi 值 (包含 Gamma(a) 因子)
-        // // phi_scaled = [1F1(a, b, z) / Gamma(b)] * Gamma(a)
-        // Complex phi_val_scaled = Hyp1F1_Scaled(hyp_a, hyp_b, arg_z, lg_g1);
-
-        // // 计算导数项 dPhi/dz_arg
-        // // 导数关系: d/dz 1F1(a,b,z) = (a/b) 1F1(a+1, b+1, z)
-        // // 我们需要计算: gamma_factor * (dPhi/dz)
-        // //             = Gamma(a) * [ (a/b) * (b/a * a/b... 稍等，看正则化定义) ]
-        // // 正则化 1F1 的导数: d/dz M(a,b,z) = a * M(a+1, b+1, z)
-        // // 所以我们需要的项是: Gamma(a) * [ a * M(a+1, b+1, z) ]
-        // //                   = Gamma(a) * a * M(a+1, b+1, z)
-        // //                   = Gamma(a+1) * M(a+1, b+1, z)
-        // // 这里的结构完全一致！只需传入 log_gamma(a+1) 即可。
-        
-        // Complex lg_g1_plus = log_gamma(hyp_a + 1.0); // 或者 lg_g1 + log(hyp_a)
-        // Complex dphi_dz_scaled = Hyp1F1_Scaled(hyp_a + 1.0, hyp_b + 1.0, arg_z, lg_g1_plus);
-        
-        // // 注意：原先代码里的 gamma_factor 已经包含在上面的 Scaled 函数结果里了
-        // // 所以不要再乘 gamma_factor 了
-        
-        // // 组合 F_L
-        // // F_L = term_z_combined * (gamma_factor * phi_val)
-        // //     = term_z_combined * phi_val_scaled
-        
-        // Complex log_term_z = -i * z_hat + L * std::log(2.0) + (L + 1.0) * std::log(z_hat);
-        // Complex term_z_combined = std::exp(log_term_z); 
-        // // 提示: 如果 z 很小且 L 很大，term_z_combined 可能会下溢为 0，这通常是可以接受的，
-        // // 但如果需要极其精确，也可以把 log_term_z 传进 Arb 里算。
-        // // 目前先假设 term_z_combined 在 double 范围内 (通常是安全的，除非 z 极小)。
-
-        // Complex F_val = term_z_combined * phi_val_scaled;
-
-        // // 3.3 计算 F_L 对 z_hat 的导数
-        // Complex dLogTerm_dz = -i + (L + 1.0) / z_hat;
-        // Complex dPhi_dz = dphi_dz_scaled * 2.0 * i; // d_arg/dz = 2i
-        
-        // Complex dFdz_val = F_val * dLogTerm_dz + term_z_combined * dPhi_dz;
-
-        // // --- 关键修改结束 ---
 
         // // 累加
         // sum_f += C_n * F_val;
@@ -1155,7 +1000,7 @@ std::pair<Complex, Complex> TeukolskyRadial::Evaluate_Coulomb(
             a_n, total_log_scale_deriv
         );
         
-        // 别忘了链式法则 d(2iz)/dz = 2i
+        // 链式法则 d(2iz)/dz = 2i
         Complex term_deriv_part2 = term_deriv_core * 2.0 * i;
 
         // --- 5. 累加 ---

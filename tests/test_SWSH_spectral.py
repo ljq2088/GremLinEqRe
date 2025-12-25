@@ -1,87 +1,112 @@
 import numpy as np
 import sys
 import os
-import math
-import cmath
+
+# 路径设置
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, '..'))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
 try:
     from GremLinEqRe import _core
-except ImportError:
-    print("❌ Error: 无法导入 C++ 模块 GremLinEqRe")
+except ImportError as e:
+    print(f"Error: {e}")
     sys.exit(1)
 
-import matplotlib.pyplot as plt
-
-def test_spectral_accuracy():
-    print("=== Testing SWSH Spectral Implementation ===")
+def check_lrr_angular_eq15_residual(swsh, n_theta=4001):
+    """
+    验证 LRR Eq(15) 残差。
+    【关键】：由于 C++ 内部计算的是 -m 模式 (e^{-im\phi})，
+    这里的势能公式必须使用 m_eff = -m 才能匹配函数的形状。
+    """
+    aomega = swsh.aw
+    m_phys = swsh.m
+    m_eff = m_phys  
     
-    # 参数设置
+    s = swsh.s
+    lam = swsh.m_lambda
+    
+    # 构造 LRR 分离常数 A_Teukolsky (Eq 15 constant term)
+    # lambda = E - 2*m_phys*aw + aw^2 - s(s+1)
+    # A_Teuk = E - s(s+1) = lambda + 2*m_phys*aw - aw^2
+    A_teuk = lam + 2*m_phys*aomega - aomega**2
+
+    thetas = np.linspace(1e-4, np.pi - 1e-4, n_theta)
+    h = thetas[1] - thetas[0]
+
+    S = np.array([swsh.evaluate_S(np.cos(th)) for th in thetas], dtype=np.complex128)
+    
+    # 差分导数
+    S_th = (S[2:] - S[:-2]) / (2*h)
+    S_th2 = (S[2:] - 2*S[1:-1] + S[:-2]) / (h*h)
+
+    th = thetas[1:-1]
+    st = np.sin(th)
+    ct = np.cos(th)
+    cot = ct / st
+
+    # Teukolsky Potential (Standard Form)
+    # V = (aw cos)^2 - 2 aw s cos + s + A - (m + s cos)^2 / sin^2
+    # 注意这里 m 用 m_eff (-m)
+    V_standard = (
+        (aomega * ct)**2 
+        - 2*aomega*s*ct 
+        + s + A_teuk 
+        - ((m_eff + s*ct)**2)/(st**2)
+    )
+
+    resid = S_th2 + cot * S_th + V_standard * S[1:-1]
+    return float(np.max(np.abs(resid)))
+
+def check_Ldag_eq34(swsh, n_theta=2001):
+    """
+    验证算符 L^dag。
+    同样需要使用 m_eff = -m 来构建数值算符。
+    """
+    aomega = swsh.aw
+    m_eff = swsh.m 
+    s = swsh.s
+
+    thetas = np.linspace(1e-4, np.pi - 1e-4, n_theta)
+    h = thetas[1] - thetas[0]
+    S = np.array([swsh.evaluate_S(np.cos(th)) for th in thetas], dtype=np.complex128)
+    S_th = (S[2:] - S[:-2]) / (2*h)
+
+    th = thetas[1:-1]
+    st = np.sin(th)
+    ct = np.cos(th)
+
+    # LRR Eq 34 (Applied to m_eff)
+    # L^dag = d/dth - m/sin + s cot + aw sin
+    L_num = S_th - (m_eff/st)*S[1:-1] + aomega*st*S[1:-1] + s*(ct/st)*S[1:-1]
+
+    L_cpp = np.array([swsh.evaluate_L2dag_S(np.cos(th_i)) for th_i in th], dtype=np.complex128)
+
+    return float(np.max(np.abs(L_cpp - L_num)))
+
+def check_theta_normalization(swsh):
+    thetas = np.linspace(1e-6, np.pi - 1e-6, 4001)
+    S = np.array([swsh.evaluate_S(np.cos(th)) for th in thetas], dtype=np.complex128)
+    return np.trapz(np.abs(S)**2 * np.sin(thetas), thetas)
+
+if __name__ == "__main__":
     s = -2
     l = 2
     m = 2
-    a_spin = 0.9
-    omega = 0.5
-    a_omega = a_spin * omega
-    
-    print(f"Parameters: s={s}, l={l}, m={m}, aw={a_omega}")
-    
-    # 初始化 SWSH (新版会自动求解特征值)
-    swsh = _core.SWSH(s, l, m, a_omega)
-    
-    E = swsh.get_E()
-    Lambda = swsh.get_lambda()
-    print(f"Eigenvalue E = {E:.12f}")
-    print(f"Lambda     = {Lambda:.12f}")
-    
-    # 测试点 (避开极点)
-    thetas = np.linspace(0.1, np.pi-0.1, 100)
-    xs = np.cos(thetas)
-    
-    # --- 验证 1: L_{-2}^dag S ---
-    # 理论算符: L^dag = d/dtheta - m/sin - s*cot + aw*sin
-    # 我们用数值差分 d/dtheta 来检查谱方法结果
-    
-    errs_L2 = []
-    
-    h = 1e-5
-    for x, th in zip(xs, thetas):
-        sin_th = np.sin(th)
-        cos_th = np.cos(th)
-        cot_th = cos_th/sin_th
-        
-        # 1. 谱方法直接计算结果 (包含 aw*sin)
-        val_spectral = swsh.evaluate_L2dag_S(x)
-        
-        # 2. 数值差分验证
-        # 计算 S(x)
-        S_plus  = swsh.evaluate_S(np.cos(th + h))
-        S_minus = swsh.evaluate_S(np.cos(th - h))
-        dS_dth_num = (S_plus - S_minus) / (2*h)
-        
-        # S(x) 当前值
-        S_val = swsh.evaluate_S(x)
-        
-        # 手动构建算符: dS/dth + (-m/sin - s*cot + aw*sin) S
-        potential = -m/sin_th - s*cot_th + a_omega * sin_th
-        val_numerical = dS_dth_num + potential * S_val
-        
-        # 误差
-        err = np.abs(val_spectral - val_numerical)
-        errs_L2.append(err)
+    aomega = 0.1
 
-    print(f"L2dag Max Error (vs finite diff): {np.max(errs_L2):.2e}")
+    print(f"Testing SWSH s={s}, l={l}, m={m}, aw={aomega}")
+    swsh = _core.SWSH(s, l, m, aomega)
     
-    # --- 验证 2: 归一化 ---
-    # int |S|^2 sin theta dtheta = int |S|^2 dx = 1
-    # 使用高斯积分或简单的梯形法则
-    S_vals = [swsh.evaluate_S(x) for x in xs]
-    integrand = np.abs(np.array(S_vals))**2
-    norm = np.trapz(integrand, x=-xs) # 注意 x 是递减的，或者用 abs
-    print(f"Normalization Check (Trapz): {norm:.5f} (Expect ~1.0)")
-    
-    if np.max(errs_L2) < 1e-4: # 差分本身有截断误差，1e-5左右正常
-        print(">>> Test PASSED: Spectral operator matches numerical limit.")
-    else:
-        print(">>> Test FAILED: Mismatch too large.")
+    print(f"E      = {swsh.E}")
+    print(f"Lambda = {swsh.m_lambda}")
 
-if __name__ == "__main__":
-    test_spectral_accuracy()
+    norm = check_theta_normalization(swsh)
+    print(f"Normalization: {norm:.6f}")
+
+    res = check_lrr_angular_eq15_residual(swsh)
+    print(f"ODE Residual:  {res:.3e}")
+
+    errL = check_Ldag_eq34(swsh)
+    print(f"Op Error L^dag:{errL:.3e}")

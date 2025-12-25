@@ -177,7 +177,7 @@ def test_full_matching():
     
     # 2. 求解 nu 和 K
     nu = tr.solve_nu(complex(float(l), 0.0))
-    n_max =50 # 增加级数项数
+    n_max =60 # 增加级数项数
     
     print("Computing coefficients...")
     a_coeffs_pos = tr.ComputeSeriesCoefficients(nu, n_max)

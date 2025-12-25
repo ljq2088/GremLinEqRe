@@ -1,5 +1,5 @@
 #include "TeukolskySource.h"
-#include "SWSH.h"  // 必须包含，用于调用 evaluate_S 等
+#include "SWSH_LRR.h"  
 #include <cmath>
 #include <complex>
 using Complex = std::complex<double>;
@@ -73,35 +73,38 @@ SourceProjections TeukolskySource::ComputeProjections(
     // ==========================================================
     // 3. 计算 SWSH 函数值及其导数算符
     // ==========================================================
-    // x = cos(theta)
+
     double x_cos = cos_th;
     
-    // S (spin weight -2)
+
     Complex S = swsh.evaluate_S(x_cos);
     
-    // swsh.evaluate_L2dag_S 计算的是 (partial_theta - m/sin + s*cot) S (不含 a*w*sin)
-    // 且使用的是 s = -2。
-    // 真正的 Teukolsky 算符 L_s^dag 包含 a*w*sin(theta)
-    Complex L2S_raw = swsh.evaluate_L2dag_S(x_cos);
-    Complex L_minus2_dag_S = L2S_raw + a_omega * sin_th * S; // L_{-2}^dag S
-    // 计算 partial_theta S
-    Complex V_minus2 = get_Vs(-2, m, a_omega, sin_th, cos_th);
-    Complex dS_dtheta = L_minus2_dag_S - V_minus2 * S;
-    // 计算 L_1^dag L_2^dag S 需要二阶导数信息
-    // 利用 swsh.evaluate_L1dag_L2dag_S (计算 partial(L2S_raw) + V_{-1_raw} * L2S_raw)
-    Complex L1L2S_raw = swsh.evaluate_L1dag_L2dag_S(x_cos);
-    // 还原 partial_theta (L_{-2}^dag S)
-    // d/dth (L_{-2}^dag S) = d/dth (L2S_raw + aw sin S) 
-    //                      = d(L2S_raw) + aw cos S + aw sin dS
-    // 从 L1L2S_raw 提取 d(L2S_raw): 
-    // L1L2S_raw = d(L2S_raw) + (-m/sin + (-1)cot) * L2S_raw
-    double cot_th = cos_th / (sin_th + 1e-10);
-    Complex V_minus1_raw = -(double)m/sin_th - 1.0 * cot_th;
-    Complex d_L2S_raw_dtheta = L1L2S_raw - V_minus1_raw * L2S_raw;
     
-    Complex d_L_minus2_dag_S_dtheta = d_L2S_raw_dtheta 
-                                    + a_omega * cos_th * S 
-                                    + a_omega * sin_th * dS_dtheta;
+    Complex L_2_dag_S = swsh.evaluate_L2dag_S(x_cos);
+    
+
+    Complex L1L2S_full = swsh.evaluate_L1dag_L2dag_S(x_cos);
+
+    // ==========================================================
+    // 辅助导数项提取 (用于后续 A_nn0 等系数的 Chain Rule)
+    // ==========================================================
+    
+    // 我们需要 dS/dtheta。
+    // 利用关系: L_{2}^dag S = dS/dtheta + V_{2} S
+    // 其中 V_{2} = -m/sin - (2)cot + a*omega*sin
+    // 因此: dS/dtheta = L_{2}^dag S - V_{2} * S
+    
+    // 注意：get_Vs 函数定义在 TeukolskySource.cpp 顶部，确保它包含 aw*sin
+    // inline Complex get_Vs(...) { return -m/sin + aw*sin + s*cot; }
+    Complex V_2 = get_Vs(2, m, a_omega, sin_th, cos_th);
+    Complex dS_dtheta = L_2_dag_S - V_2 * S;
+
+    // 我们需要 d(L_{2}^dag S)/dtheta (记为 d(L2S))。
+    // 利用关系: L_{1}^dag (L2S) = d(L2S)/dtheta + V_{1} * (L2S)
+    // 因此: d(L2S)/dtheta = L1L2S_full - V_{1} * L_minus2_dag_S
+    
+    Complex V_1 = get_Vs(1, m, a_omega, sin_th, cos_th);
+    Complex d_L_2_dag_S_dtheta = L1L2S_full - V_1 * L_2_dag_S;
     // ==========================================================
     // 4. 计算 C 系数 (Tetrad projections of T_munu)
     // 依据 LRR Eq. (30), (31), (32)
@@ -139,7 +142,7 @@ SourceProjections TeukolskySource::ComputeProjections(
     
     // ----------------------------------------------------------
     // A_nn0 (Eq. 37)
-    // A_nn0 = -2/(sqrt(2pi)*Delta^2) * rho^-2 * rhobar^-1 * C_nn * L_-1^dag [ rho^-4 L_2^dag (rho^3 S) ]
+    // A_nn0 = -2/(sqrt(2pi)*Delta^2) * rho^-2 * rhobar^-1 * C_nn * L_1^dag [ rho^-4 L_2^dag (rho^3 S) ]
     // ----------------------------------------------------------
     
     // --- 准备 Op_nn0 计算所需的公共项 ---
@@ -148,8 +151,8 @@ SourceProjections TeukolskySource::ComputeProjections(
     
     // 1. 计算 Inner = L_2^dag (rho^3 S)
     // L_2^dag = partial_theta + V_2
-    // V_2 = V_{-2} + 4 cot theta
-    Complex V_2 = get_Vs(2, m, a_omega, sin_th, cos_th);
+ 
+    // Complex V_2 = get_Vs(2, m, a_omega, sin_th, cos_th);
     
     // d(rho)/dtheta = -rho^2 * (-i a (-sin)) = -i a rho^2 sin
     Complex d_rho_dth = -i * a * rho2 * sin_th;
@@ -165,19 +168,19 @@ SourceProjections TeukolskySource::ComputeProjections(
     // d(Inner) = d(rho^3) * bracket + rho^3 * d(bracket)
     // d(bracket) = d(dS) + d(V_2)*S + V_2*dS - d(3ia rho sin S)
     
-    // d(dS) = d(L_{-2}^dag S - V_{-2} S)
-    //       = d(L_{-2}^dag S) - d(V_{-2}) S - V_{-2} dS
-    Complex d_V_minus2_dth = m * cos_th / sin2 + a_omega * cos_th - (-2.0) / sin2; // d/dth(-2 cot) = +2/sin^2
-    Complex d2S_dtheta2 = d_L_minus2_dag_S_dtheta - d_V_minus2_dth * S - V_minus2 * dS_dtheta;
+    // d(dS) = d(L_{2}^dag S - V_{2} S)
+    //       = d(L_{2}^dag S) - d(V_{2}) S - V_{2} dS
+    Complex d_V_2_dth = m * cos_th / sin2 + a_omega * cos_th - (2.0) / sin2; // d/dth(-2 cot) = +2/sin^2
+    Complex d2S_dtheta2 = d_L_2_dag_S_dtheta - d_V_2_dth * S - V_2 * dS_dtheta;
     
     // d(V_2)/dtheta
-    Complex d_V2_dth = m * cos_th / sin2 + a_omega * cos_th - (2.0) / sin2;
+    // Complex d_V2_dth = m * cos_th / sin2 + a_omega * cos_th - (2.0) / sin2;
     
     // d(rho sin) = d_rho sin + rho cos = (-i a rho^2 sin) sin + rho cos
     Complex d_rho_sin_dth = -i * a * rho2 * sin2 + rho * cos_th;
     
     Complex d_bracket_dth = d2S_dtheta2 
-                          + d_V2_dth * S + V_2 * dS_dtheta 
+                          + d_V_2_dth * S + V_2 * dS_dtheta 
                           - 3.0 * i * a * (d_rho_sin_dth * S + rho * sin_th * dS_dtheta);
                           
     Complex d_Inner_dth = d_rho3_dth * term_inner_bracket + rho3 * d_bracket_dth;
@@ -186,7 +189,7 @@ SourceProjections TeukolskySource::ComputeProjections(
     // Outer = d(rho^-4 Inner) + V_1 * (rho^-4 Inner)
     //       = d(rho^-4) Inner + rho^-4 d(Inner) + V_1 rho^-4 Inner
     // d(rho^-4) = -4 rho^-5 d_rho = -4 rho^-5 (-i a rho^2 sin) = 4 i a rho^-3 sin
-    Complex V_1 = get_Vs(1, m, a_omega, sin_th, cos_th);
+    // Complex V_1 = get_Vs(1, m, a_omega, sin_th, cos_th);
     
     Complex Op_nn0_val = 4.0 * i * a * std::pow(rho, -3) * sin_th * Inner
                        + std::pow(rho, -4) * d_Inner_dth

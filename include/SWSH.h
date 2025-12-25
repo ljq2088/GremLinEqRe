@@ -85,7 +85,10 @@ public:
     // 获取物理分离常数 Lambda (用于 Radial Teukolsky 方程)
     // Lambda = E - 2*m*aw + (aw)^2 - s(s+1)
     double get_lambda() const { return m_lambda; }
-
+    double get_aw() const { return m_aw; }
+    double get_m() const { return m_m; }
+    double get_s() const { return m_s; }
+    double get_l() const { return m_l; }
     /**
      * @brief 计算自旋加权球谐函数 S_lm(theta)
      * 方法：Jacobi 多项式递归 + 谱求和
@@ -121,7 +124,8 @@ private:
     
     // 谱展开系数 (在构造函数中计算并归一化)
     std::vector<double> m_b;
-    
+    // Evaluate S(θ), ∂θ S, ∂θ^2 S at x = cosθ, consistent with LRR conventions
+    void evaluate_S_theta_derivs(double x, Complex& S, Complex& dS_dth, Complex& d2S_dth2) const;
     void solve_eigenvalue();
 };
 
