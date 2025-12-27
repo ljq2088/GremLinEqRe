@@ -4,20 +4,20 @@
  * 对应 GremlinEq 的 FT 类及 fujtag 文件夹下的相关实现
  */
 
- #ifndef TEUKOLSKY_RADIAL_H
- #define TEUKOLSKY_RADIAL_H
- #include <map>
- #include <complex>
- #include <vector>
- #include <cmath>
+#ifndef TEUKOLSKY_RADIAL_H
+#define TEUKOLSKY_RADIAL_H
+#include <map>
+#include <complex>
+#include <vector>
+#include <cmath>
 
  
- using Real = double;
- using Complex = std::complex<double>;
- struct AsymptoticAmplitudes {
-   std::complex<double> R_in_coef_inf_inc;   // R^in 在无穷远的入射系数 (对应 r^{-1} e^{-i*omega*r*})
-   std::complex<double> R_in_coef_inf_trans; // R^in 在无穷远的透射系数 (对应 r^{-(2s+1)} e^{+i*omega*r*})
-   // 如果需要 R^up 的系数也可以加在这里
+using Real = double;
+using Complex = std::complex<double>;
+struct AsymptoticAmplitudes {
+std::complex<double> R_in_coef_inf_inc;   // R^in 在无穷远的入射系数 (对应 r^{-1} e^{-i*omega*r*})
+std::complex<double> R_in_coef_inf_trans; // R^in 在无穷远的透射系数 (对应 r^{-(2s+1)} e^{+i*omega*r*})
+// 如果需要 R^up 的系数也可以加在这里
 };
 // 存放物理散射系数和 Wronskian
 struct PhysicalAmplitudes {
@@ -27,32 +27,32 @@ struct PhysicalAmplitudes {
    std::complex<double> C_trans; // Infinity transmission coeff of R^up (outgoing)
 };
 
- class TeukolskyRadial {
- public:
-    /**
-     * @brief 构造函数
-     * @param M 黑洞质量
-     * @param a_spin 黑洞自旋 a (a/M)
-     * @param omega 频率 omega (M*omega)
-     * @param s 自旋权重 (对于引力波通常为 -2)
-     * @param l 谐波指数 l
-     * @param m 谐波指数 m
-     * @param lambda 角向特征值 (从 SWSH 模块获得)
-     * /**
-     * @brief 求解重整化角动量 nu
-     * 使用割线法寻找 nu，使得 g(nu) = 0
-     * @param nu_guess 初始猜测值
-     * @return 收敛后的 nu
-     */
+class TeukolskyRadial {
+   public:
+      /**
+       * @brief 构造函数
+       * @param M 黑洞质量
+       * @param a_spin 黑洞自旋 a (a/M)
+       * @param omega 频率 omega (M*omega)
+       * @param s 自旋权重 (对于引力波通常为 -2)
+       * @param l 谐波指数 l
+       * @param m 谐波指数 m
+       * @param lambda 角向特征值 (从 SWSH 模块获得)
+       * /**
+       * @brief 求解重整化角动量 nu
+       * 使用割线法寻找 nu，使得 g(nu) = 0
+       * @param nu_guess 初始猜测值
+       * @return 收敛后的 nu
+       */
    Complex solve_nu(Complex nu_guess) const;
-    /**
-     * @brief 计算方程残差 g(nu)
-     * g(nu) = beta_0 + alpha_0 * R_1 + gamma_0 * L_-1
-     * 暴露此接口主要用于调试和验证
-     */
+      /**
+       * @brief 计算方程残差 g(nu)
+       * g(nu) = beta_0 + alpha_0 * R_1 + gamma_0 * L_-1
+       * 暴露此接口主要用于调试和验证
+       */
    Complex calc_g(Complex nu) const;
 
- 
+
 
 
    TeukolskyRadial(Real M, Real a_spin, Real omega, int s, int l, int m, Real lambda);
@@ -115,6 +115,11 @@ struct PhysicalAmplitudes {
    std::complex<double> nu, 
    const std::map<int, std::complex<double>>& a_coeffs
 );
+   // 辅助函数：专门计算未校准的远场组合解
+   std::pair<Complex, Complex> Compute_Raw_Coulomb_Combo(
+      double r, Complex nu, Complex K_nu, Complex K_neg_nu,
+      const std::map<int, Complex>& a_coeffs_pos,
+      const std::map<int, Complex>& a_coeffs_neg);
 
    // 辅助函数：计算合流超几何函数 1F1(a;b;z)
    // 对应 LRR Eq. 142 中的 Phi 或 M 函数
@@ -142,6 +147,7 @@ struct PhysicalAmplitudes {
    void ResetCalibration() { 
       m_is_calibrated = false;   
       m_match_calibration_factor = 1.0;
+
   }
  private:
    Real m_M;
@@ -165,12 +171,8 @@ struct PhysicalAmplitudes {
    Complex m_match_calibration_factor = 1.0; 
    bool m_is_calibrated = false; // 标记是否已经计算过校准因子
 
-   // 辅助函数：专门计算未校准的远场组合解
-   std::pair<Complex, Complex> Compute_Raw_Coulomb_Combo(
-      double r, Complex nu, Complex K_nu, Complex K_neg_nu,
-      const std::map<int, Complex>& a_coeffs_pos,
-      const std::map<int, Complex>& a_coeffs_neg);
-    
+
+   std::pair<Complex, Complex> ComputeAlpha0R1_Gamma0Lminus1(Complex nu, int N) const;
     
    
  };

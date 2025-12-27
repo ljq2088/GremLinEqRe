@@ -165,9 +165,9 @@ def test_full_matching():
     print("Diagnostic Radial Matching (Amplitude & Phase)")
     print("=========================================================")
 
-    M, a, omega = 1.0, 0.5, 0.1  # 此时 omega 较小，远场收敛可能较慢
+    M, a, omega = 1.0, 0.9,0.3
     s, l, m = -2, 2, 2
-
+    print(f'a: {a}, omega: {omega}, s: {s}, l: {l}, m: {m}')
     # 1. 准备 Lambda 和 Solver
     swsh = _core.SWSH(s, l, m, a * omega)
     lambda_val = swsh.m_lambda
@@ -176,9 +176,9 @@ def test_full_matching():
     tr = _core.TeukolskyRadial(M, a, omega, s, l, m, lambda_val)
     
     # 2. 求解 nu 和 K
-    nu = tr.solve_nu(complex(float(l), 0.0))
-    n_max =60 # 增加级数项数
-    
+    nu = tr.solve_nu(complex(float(l), 0.1))
+    n_max =300 # 增加级数项数
+    print(f"nu: {nu}")
     print("Computing coefficients...")
     a_coeffs_pos = tr.ComputeSeriesCoefficients(nu, n_max)
     nu_neg = -nu - 1.0
@@ -195,8 +195,8 @@ def test_full_matching():
     kappa = np.sqrt(1.0 - a**2)
     
     # 扫描从 r_plus 附近直到远场
-    r_values = np.linspace(r_plus + 0.01, 8.0, 500)
-    
+    r_values = np.linspace(r_plus + 0.1*kappa, r_plus+2.0*kappa+10.0*kappa, 50)
+    r_match_ideal = r_plus + 7.0 * kappa
     near_abs, near_phase = [], []
     far_abs, far_phase = [], []
     
@@ -208,32 +208,65 @@ def test_full_matching():
         try:
             res_near = tr.Evaluate_Hypergeometric(r, nu, a_coeffs_pos)
             val_n = res_near[0]
+            der_n = res_near[1]
         except:
             val_n = complex(np.nan, np.nan)
+            der_n = complex(np.nan, np.nan)
             
         # --- Far Solution ---
         try:
             res_c_pos = tr.Evaluate_Coulomb(r, nu, a_coeffs_pos)
             res_c_neg = tr.Evaluate_Coulomb(r, nu_neg, a_coeffs_neg)
             val_f = K_pos * res_c_pos[0] + K_neg * res_c_neg[0]
+            der_f = K_pos * res_c_pos[1] + K_neg * res_c_neg[1]
         except:
             val_f = complex(np.nan, np.nan)
+            der_f = complex(np.nan, np.nan)
 
         near_abs.append(abs(val_n))
         near_phase.append(np.angle(val_n))
         
         far_abs.append(abs(val_f))
         far_phase.append(np.angle(val_f))
+    far_abs = np.array(far_abs)
+    far_phase = np.array(far_phase)
+    near_abs = np.array(near_abs)
+    near_phase = np.array(near_phase)
+    #计算匹配的拟合常数
+    mask = (r_values > r_match_ideal-1.0*kappa) & (r_values < r_match_ideal + 3.0*kappa)
+    matching_idx = np.where(mask)[0]  # [0] 是因为 np.where 返回的是元组
+    # 在出错行之前添加
+    print(f"matching_idx 类型: {type(matching_idx)}")
+    print(f"matching_idx 形状: {matching_idx.shape if hasattr(matching_idx, 'shape') else '无shape属性'}")
+    print(f"matching_idx 内容前5个: {matching_idx[:5] if isinstance(matching_idx, np.ndarray) else matching_idx}")
+    print(f"far_abs 形状: {far_abs.shape}")
+    #去除nan数据
+    matching_idx = matching_idx[~np.isnan(far_abs[matching_idx])]
+    matching_idx = matching_idx[~np.isnan(near_abs[matching_idx])]
+    #计算比值的中位数和平均数
+    ratio = far_abs / near_abs
+    ratio_mean = np.mean(ratio[matching_idx])
+    ratio_median = np.median(ratio[matching_idx])
+    #排除差异过大的数据
+    matching_idx=matching_idx[~(abs(ratio[matching_idx]) < 0.8*abs(ratio_median))]
+    matching_idx=matching_idx[~(abs(ratio[matching_idx]) > 1.2*abs(ratio_median))]
+    matching_idx=matching_idx[~(abs(ratio[matching_idx]) < 0.8*abs(ratio_mean))]
+    matching_idx=matching_idx[~(abs(ratio[matching_idx]) > 1.2*abs(ratio_mean))]
+
+   
+
+
+    C=(np.sum(abs(far_abs[matching_idx])**2))/(np.sum(far_abs[matching_idx]*near_abs[matching_idx]*np.exp(1j*(near_phase[matching_idx]-far_phase[matching_idx]))))
     print(near_abs,far_abs)
     # 4. 绘图诊断
-    fig, axes = plt.subplots(3, 1, figsize=(10, 15), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(20, 15), sharex=True)
     
     # 子图1: 幅度 (Log Scale)
     ax = axes[0]
     ax.semilogy(r_values, near_abs, 'r-', lw=2, label='Near (Hypergeo) Abs')
     ax.semilogy(r_values, far_abs, 'b--', lw=2, label='Far (Coulomb) Abs')
     # 标出理论匹配区域
-    r_match_ideal = r_plus + 1.0 * kappa
+    
     ax.axvline(r_match_ideal, color='g', ls=':', label='Ideal Match')
     ax.set_title("Amplitude |R| (Log Scale)")
     ax.legend()
@@ -248,13 +281,31 @@ def test_full_matching():
     ax.set_title("Phase (Unwrapped)")
     ax.legend()
     ax.grid(True)
-
-    # 子图3: 相对误差 (基于幅度)
+    #子图3：matching之后的幅度
     ax = axes[2]
+    ax.semilogy(r_values, abs(C)*near_abs, 'r-', lw=2, label='Near (Hypergeo) Abs')
+    ax.semilogy(r_values, far_abs, 'b--', lw=2, label='Far (Coulomb) Abs (Matched)')
+    # 标出理论匹配区域
+    ax.axvline(r_match_ideal, color='g', ls=':', label='Ideal Match')
+    ax.set_title("Amplitude |R| (Log Scale)")
+    ax.legend()
+    ax.grid(True)
+    #子图4：matching之后的相位
+    ax = axes[3]
+    #为了避免相位卷绕(wrapping)导致看来乱七八糟，使用 unwrap
+    ax.plot(r_values, np.unwrap(near_phase+np.angle(C)), 'r-', lw=2, label='Near Phase')
+    ax.plot(r_values, np.unwrap(far_phase), 'b--', lw=2, label='Far Phase (Matched)')
+    ax.axvline(r_match_ideal, color='g', ls=':')
+    ax.set_title("Phase (Unwrapped)")
+    ax.legend()
+    ax.grid(True)
+
+    # 子图5: matching之后的相对误差
+    ax = axes[4]
     # 只计算非 NaN 且幅度不太小的区域
     diffs = []
     for i in range(len(r_values)):
-        v_n = near_abs[i]
+        v_n =abs(C)* near_abs[i]
         v_f = far_abs[i]
         if np.isnan(v_n) or np.isnan(v_f) or v_n < 1e-20:
             diffs.append(np.nan)

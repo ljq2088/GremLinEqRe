@@ -28,8 +28,8 @@ def test_schwarzschild_limit():
     # lambda = l(l+1) - s(s+1)
     # lambda = 2*3 - (-2)*(-1) = 6 - 2 = 4. Correct.
     lam = 4.0 
-    
-    tr = _core.TeukolskyRadial(a, omega, s, l, m, lam)
+    M=1.0
+    tr = _core.TeukolskyRadial(M,a, omega, s, l, m, lam)
     
     # 初始猜测 nu = l = 2
     guess = 2.0 + 0.0j
@@ -52,20 +52,21 @@ def test_kerr_convergence():
     """
     测试克尔情况 (a=0.9) 的收敛性
     """
-    print("\n[Test 2] Kerr Convergence (a=0.9)")
+    print("\n[Test 2] Kerr Convergence (a=0.5)")
     
-    a = 0.9
-    omega = 0.1
+    a = 0.0
+    omega = 0.2
     s = -2
     l = 2
     m = 2
     # 这里 lambda 我们暂时用史瓦西的值近似，或者随便给一个合理值
     # 真实的 lambda 需要 SWSH 求解器，但这不影响 nu 求解器的数学收敛性
-    lam = 4.0 
+    lam = _core.SWSH(s, l, m, a * omega).m_lambda
+    print(f"Using lambda: {lam}")
+    M=1.0
+    tr = _core.TeukolskyRadial(M,a, omega, s, l, m, lam)
     
-    tr = _core.TeukolskyRadial(a, omega, s, l, m, lam)
-    
-    guess = 2.0 + 0.1j # 给一点虚部作为扰动
+    guess = l + 0.1j # 给一点虚部作为扰动
     
     nu_sol = tr.solve_nu(guess)
     print(f"Solved nu    : {nu_sol}")

@@ -6,7 +6,7 @@ from juliacall import Main as jl
 jl.seval("using SpinWeightedSpheroidalHarmonics")
 
 s, l, m = -2, 2, 2
-c = 0.05  # a*omega
+c = 0.9*0.3  # a*omega
 
 # Julia 返回的是 Radial Lambda
 lambda_radial = jl.spin_weighted_spheroidal_eigenvalue(s, l, m, c)

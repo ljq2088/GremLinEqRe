@@ -86,7 +86,7 @@ PYBIND11_MODULE(_core, m) {
           .def("Evaluate_Coulomb", &TeukolskyRadial::Evaluate_Coulomb,
                          py::arg("r"), py::arg("nu"), py::arg("a_coeffs"),
                          "计算远场径向函数 R_C^nu(r) 及其导数")
-                         
+          .def("Compute_Raw_Coulomb_Combo", &TeukolskyRadial::Compute_Raw_Coulomb_Combo)
           .def("hyp1f1", &TeukolskyRadial::Hyp1F1,
                          py::arg("a"), py::arg("b"), py::arg("z"),py::arg("regularized")=false,
                          "Wrapper for 1F1 confluent hypergeometric function")
